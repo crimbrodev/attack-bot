@@ -10,9 +10,8 @@ import os
 import sys
 import time
 
-sys.path.insert(0, "/root/kazahstanos/projects/slay4242bot")
-import bot as base
-from watcher import parse_posts, fetch_preview, make_comment, CHANNEL as _WATCH_CHANNEL
+import base
+from watcher import parse_posts, fetch_preview, make_comment, DEFAULT_CHANNEL as _WATCH_CHANNEL
 
 from aiogram import Bot
 
@@ -75,12 +74,10 @@ async def attack(pid: int, post_text: str) -> None:
             # если включён авто-callall — сразу пингуем всех по базе (ZazyvalaTag2Bot-стиль)
             if is_callall_on():
                 try:
-                    sys.path.insert(0, "/root/kazahstanos/projects/attack3v1r1b42pbot")
-                    from attack_bot import build_tags_from_users, load_muted
+                    from storage import build_tags_from_users, load_muted, load_users
                     tags = build_tags_from_users(cid)
                     if tags:
                         muted_now = [int(x) for x in load_muted().get(cid, [])]
-                        from attack_bot import load_users
                         users_here = load_users().get(cid, {})
                         final_tags = []
                         for tag, uid_key in zip(tags, users_here.keys()):

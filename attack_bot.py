@@ -9,8 +9,7 @@ import random
 import re
 import sys
 
-sys.path.insert(0, "/root/kazahstanos/projects/slay4242bot")
-import bot as base  # общий Groq-ключ, модели, whitelist своих
+import base
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandStart
@@ -559,8 +558,6 @@ async def cmd_setthread(message: Message):
 async def userbot_get_members(chat_id: int) -> list[int] | None:
     """Достаём ВСЕХ участников группы через юзербот (Telethon). None = юзербот не настроен."""
     try:
-        # импортируем telethon из venv юзербота
-        sys.path.insert(0, "/root/kazahstanos/projects/slay_userbot/venv/lib/python3.11/site-packages")
         from telethon import TelegramClient
         from telethon.tl.functions.channels import GetParticipantsRequest
         from telethon.tl.types import ChannelParticipantsSearch
