@@ -134,7 +134,7 @@ async def main() -> None:
     setup_logging(f"watcher_{CHANNEL}")
     last = load_last(CHANNEL)
     first = not last
-    posts = parse_posts(fetch_preview())
+    posts = parse_posts(fetch_preview(CHANNEL))
     if first:
         ids = [pid for pid, _ in posts]
         last = {"post_id": max(ids) if ids else 0, "post_time": time.time(), "reminders": 0}
@@ -145,7 +145,7 @@ async def main() -> None:
     while True:
         try:
             last = load_last(CHANNEL)
-            posts = parse_posts(fetch_preview())
+            posts = parse_posts(fetch_preview(CHANNEL))
             fresh = sorted([(pid, t) for pid, t in posts if pid > int(last.get("post_id", 0))])
             if fresh:
                 for pid, post_text in fresh:
