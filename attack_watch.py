@@ -7,6 +7,7 @@ import asyncio
 import html as htmlmod
 import logging
 import os
+import random
 import sys
 import time
 
@@ -62,11 +63,12 @@ async def attack(pid: int, post_text: str) -> None:
             reset_group_errors(cid)
             for i in range(1, count + 1):
                 try:
-                    comment = make_comment(post_text)
+                    ai_text = make_comment(post_text)
+                    final_text = f"{ai_text}{random.choice(base.AD_VARIANTS)}{base.SIGN}"
                 except Exception as err:
                     print(f"Грок упал ({pid} #{i}): {err}")
                     continue
-                safe = htmlmod.escape(comment, quote=False)
+                safe = htmlmod.escape(final_text, quote=False)
                 await tg.send_message(
                     cid,
                     f"✍️ Черновик №{i} (жми значок копирования):\n<pre>{safe}</pre>",
