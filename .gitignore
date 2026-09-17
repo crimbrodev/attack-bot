@@ -1,0 +1,13 @@
+.env
+*.log
+users.json
+__pycache__/
+*.pyc
+*.session
+last.json
+last_*.json
+groups.json
+muted.json
+attack.txt
+callall.txt
+remind.txt
