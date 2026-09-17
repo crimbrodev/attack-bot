@@ -27,6 +27,18 @@ from storage import (
     load_last,
 )
 
+def setup_logging(name: str = "bot") -> None:
+    """Настройка логирования с ротацией файлов."""
+    from logging.handlers import RotatingFileHandler
+    from config import STATE_DIR, LOG_MAX_BYTES, LOG_BACKUP_COUNT
+    log_file = STATE_DIR / f"{name}.log"
+    handler = RotatingFileHandler(
+        log_file, maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT, encoding="utf-8"
+    )
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    logging.basicConfig(level=logging.INFO, handlers=[handler, logging.StreamHandler()])
+
+
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
@@ -674,7 +686,7 @@ async def cmd_callall(message: Message):
 
 
 async def main():
-    logging.basicConfig(level=logging.INFO)
+    setup_logging("bot")
     me = await bot.get_me()
     print(f"🚀 Боевой бот запущен: @{me.username} id={me.id}")
     try:

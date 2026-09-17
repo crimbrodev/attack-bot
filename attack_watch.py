@@ -26,6 +26,18 @@ from storage import (
 
 CHANNEL = os.environ.get("HERMES_CHANNEL", _WATCH_CHANNEL)
 
+def setup_logging(name: str = "watcher") -> None:
+    """Настройка логирования с ротацией файлов."""
+    from logging.handlers import RotatingFileHandler
+    from config import STATE_DIR, LOG_MAX_BYTES, LOG_BACKUP_COUNT
+    log_file = STATE_DIR / f"{name}.log"
+    handler = RotatingFileHandler(
+        log_file, maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT, encoding="utf-8"
+    )
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    logging.basicConfig(level=logging.INFO, handlers=[handler, logging.StreamHandler()])
+
+
 tg = Bot(token=BOT_TOKEN)
 
 
@@ -122,7 +134,7 @@ async def remind(pid: int, minutes: int) -> None:
 
 
 async def main() -> None:
-    logging.basicConfig(level=logging.INFO)
+    setup_logging(f"watcher_{CHANNEL}")
     last = load_last(CHANNEL)
     first = not last
     posts = parse_posts(fetch_preview())
