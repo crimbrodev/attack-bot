@@ -16,186 +16,19 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandStart
 from aiogram.types import BotCommand, Message, ChatMemberUpdated
 
-TOKEN = "BOT_TOKEN_REMOVED"
-STATE_DIR = "/root/kazahstanos/projects/attack3v1r1b42pbot"
-GROUPS_FILE = f"{STATE_DIR}/groups.json"
-LAST_FILE = f"{STATE_DIR}/last.json"
-USERS_FILE = f"{STATE_DIR}/users.json"
-ATTACK_FILE = f"{STATE_DIR}/attack.txt"
-DEFAULT_COUNT = 5
+from config import BOT_TOKEN, DEFAULT_COUNT, MAX_GROUP_ATTEMPTS, USERBOT_API_ID, USERBOT_API_HASH_FILE, USERBOT_SESSION_DIR, CHANNELS
+from storage import (
+    load_groups, save_groups, load_users, remember_user,
+    build_tags_from_users, load_muted, save_muted, is_muted, set_muted,
+    is_attack_on, set_attack, set_channel_on,
+    is_callall_on, set_callall,
+    get_remind_minutes, set_remind_minutes,
+    increment_group_errors, reset_group_errors, remove_group,
+    load_last,
+)
 
-bot = Bot(token=TOKEN)
+bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
-
-
-def load_groups() -> dict:
-    try:
-        with open(GROUPS_FILE, encoding="utf-8") as f:
-            return json.load(f)
-    except (FileNotFoundError, ValueError):
-        return {}
-
-
-def save_groups(g: dict) -> None:
-    with open(GROUPS_FILE, "w", encoding="utf-8") as f:
-        json.dump(g, f, ensure_ascii=False)
-
-
-def load_users() -> dict:
-    """{chat_id_str: {uid_str: {name, username}}} — все кто писал в группе.
-    ZazyvalaTag2Bot-стиль: тегаем всех по @username или tg://user?id=..."""
-    try:
-        with open(USERS_FILE, encoding="utf-8") as f:
-            return json.load(f)
-    except (FileNotFoundError, ValueError):
-        return {}
-
-
-def save_users(u: dict) -> None:
-    try:
-        with open(USERS_FILE, "w", encoding="utf-8") as f:
-            json.dump(u, f, ensure_ascii=False)
-    except Exception as err:
-        print(f"users-save: {err}")
-
-
-def remember_user(chat_id: int, user) -> None:
-    """Запоминаем всех, кто писал в группе — потом тегаем в callall."""
-    try:
-        if not user or getattr(user, "is_bot", False):
-            return
-        u = load_users()
-        cid = str(chat_id)
-        grp = u.setdefault(cid, {})
-        name = (user.full_name or user.username or str(user.id))[:60]
-        grp[str(user.id)] = {"name": name, "username": (getattr(user, "username", "") or "").strip()}
-        save_users(u)
-    except Exception as err:
-        print(f"remember: {err}")
-
-
-def build_tags_from_users(cid: str) -> list[str]:
-    """Собирает теги по ZazyvalaTag2Bot-стилю:
-    если есть @username — тег текстом (прилетит уведом), иначе кликабельная ссылка с именем."""
-    tags: list[str] = []
-    users_here = load_users().get(cid, {})
-    for uid, info in users_here.items():
-        uname = (info.get("username") or "").strip()
-        if uid.startswith("u_"):
-            if uname:
-                tags.append("@" + uname.lstrip("@"))
-            continue
-        if uname:
-            tags.append("@" + uname.lstrip("@"))
-        else:
-            name = htmlmod.escape((info.get("name") or "боец")[:40], quote=False)
-            tags.append(f'<a href="tg://user?id={uid}">{name}</a>')
-    return tags
-
-
-def is_attack_on() -> bool:
-    """Атаки ВКЛ/ВЫКЛ. По умолчанию ВКЛ."""
-    try:
-        with open(ATTACK_FILE, encoding="utf-8") as f:
-            return f.read().strip() != "off"
-    except FileNotFoundError:
-        return True
-
-
-def set_attack(on: bool) -> None:
-    with open(ATTACK_FILE, "w", encoding="utf-8") as f:
-        f.write("on" if on else "off")
-    print(f"Атаки: {'ВКЛ' if on else 'ВЫКЛ'}")
-
-
-def is_channel_on(channel: str) -> bool:
-    """Проверяет, включён ли конкретный канал. По умолчанию ВКЛ."""
-    try:
-        with open(f"{STATE_DIR}/{channel}.txt", encoding="utf-8") as f:
-            return f.read().strip() != "off"
-    except FileNotFoundError:
-        return True
-
-
-def set_channel_on(channel: str, on: bool) -> None:
-    """Включает или выключает конкретный канал."""
-    with open(f"{STATE_DIR}/{channel}.txt", "w", encoding="utf-8") as f:
-        f.write("on" if on else "off")
-    print(f"Канал {channel}: {'ВКЛ' if on else 'ВЫКЛ'}")
-
-
-REMIND_FILE = f"{STATE_DIR}/remind.txt"
-DEFAULT_REMIND_MIN = 5
-USERBOT_API_ID = 0
-USERBOT_API_HASH_FILE = "/root/kazahstanos/projects/slay_userbot/.api_hash"
-USERBOT_SESSION_DIR = "/root/kazahstanos/projects/slay_userbot"
-
-
-def get_remind_minutes() -> int:
-    try:
-        with open(REMIND_FILE, encoding="utf-8") as f:
-            raw = f.read().strip()
-        val = int(raw)
-        return val if val > 0 else DEFAULT_REMIND_MIN
-    except (FileNotFoundError, ValueError):
-        return DEFAULT_REMIND_MIN
-
-
-def set_remind_minutes(minutes: int) -> None:
-    with open(REMIND_FILE, "w", encoding="utf-8") as f:
-        f.write(str(minutes))
-    print(f"Интервал напоминалок: {minutes} мин")
-
-
-def last_info() -> dict:
-    try:
-        with open(LAST_FILE, encoding="utf-8") as f:
-            return json.load(f)
-    except (FileNotFoundError, ValueError):
-        return {}
-
-
-MUTED_FILE = f"{STATE_DIR}/muted.json"
-
-
-def load_muted() -> dict:
-    """{chat_id_str: [user_id, ...]} — кто попросил не тегать."""
-    try:
-        with open(MUTED_FILE, encoding="utf-8") as f:
-            return json.load(f)
-    except (FileNotFoundError, ValueError):
-        return {}
-
-
-def save_muted(d: dict) -> None:
-    with open(MUTED_FILE, "w", encoding="utf-8") as f:
-        json.dump(d, f, ensure_ascii=False)
-
-
-def is_muted(chat_id: int | str, user_id: int) -> bool:
-    m = load_muted().get(str(chat_id), [])
-    return int(user_id) in [int(x) for x in m]
-
-
-def set_muted(chat_id: int | str, user_id: int, on: bool) -> bool:
-    """Поменять состояние мута. Возвращает итог: True если муть включён."""
-    m = load_muted()
-    cid = str(chat_id)
-    arr = [int(x) for x in m.get(cid, [])]
-    uid = int(user_id)
-    if on:
-        if uid not in arr:
-            arr.append(uid)
-        result = True
-    else:
-        arr = [x for x in arr if x != uid]
-        result = False
-    if arr:
-        m[cid] = arr
-    else:
-        m.pop(cid, None)
-    save_muted(m)
-    return result
 
 
 @dp.my_chat_member()
@@ -243,7 +76,12 @@ async def on_added(event: ChatMemberUpdated):
             "/stop — отписаться.",
             parse_mode="HTML",
         )
+        reset_group_errors(cid)
     except Exception as err:
+        if "Not Found" in str(err):
+            errors = increment_group_errors(cid)
+            if errors >= MAX_GROUP_ATTEMPTS:
+                remove_group(cid)
         print(f"Привет в {cid} не ушёл: {err}")
 
 
@@ -252,7 +90,7 @@ def _watched_channels() -> list[str]:
     Достаём через psutil если есть, иначе перебираем known."""
     chans = ["slay_awards"]
     try:
-        import os, subprocess
+        import subprocess
         out = subprocess.check_output(
             ["pgrep", "-af", "attack_watch.py"], text=True, timeout=5,
         )
@@ -332,20 +170,14 @@ async def cmd_status(message: Message):
     count = g.get(cid, {}).get("count", DEFAULT_COUNT)
     remind_min = get_remind_minutes()
     import time
-    channels = ["slay_awards", "streaminside", "BotovodX"]
     lines = []
-    for ch in channels:
-        fn = f"{STATE_DIR}/last_{ch}.json" if ch != "slay_awards" else f"{STATE_DIR}/last.json"
-        try:
-            with open(fn, encoding="utf-8") as f:
-                info = json.load(f)
-        except (FileNotFoundError, ValueError):
-            info = {}
+    for ch in CHANNELS:
+        info = load_last(ch)
         if not info.get("post_id"):
             lines.append(f"• @{ch}: постов пока не было.")
             continue
         ago = int((time.time() - info.get("post_time", time.time())) // 60)
-        state = "🔥" if is_channel_on(ch) else "🔴"
+        state = "🔥" if is_attack_on(ch) else "🔴"
         lines.append(
             f"{state} @{ch}: https://t.me/{ch}/{info.get('post_id')} "
             f"({ago} мин назад, напоминалок: {info.get('reminders', 0)})")
@@ -581,7 +413,7 @@ async def cmd_slayattack(message: Message):
         on = parts[1].lower() in ("on", "вкл", "1")
         set_channel_on(channel, on)
     else:
-        on = not is_channel_on(channel)
+        on = not is_attack_on(channel)
         set_channel_on(channel, on)
     await message.answer(
         f"🔥 Атаки от @slay_awards ВКЛЮЧЕНЫ — бью по новым постам." if on
@@ -597,7 +429,7 @@ async def cmd_siattack(message: Message):
         on = parts[1].lower() in ("on", "вкл", "1")
         set_channel_on(channel, on)
     else:
-        on = not is_channel_on(channel)
+        on = not is_attack_on(channel)
         set_channel_on(channel, on)
     await message.answer(
         f"🔥 Атаки от @streaminside ВКЛЮЧЕНЫ — бью по новым постам." if on
@@ -613,7 +445,7 @@ async def cmd_botovattack(message: Message):
         on = parts[1].lower() in ("on", "вкл", "1")
         set_channel_on(channel, on)
     else:
-        on = not is_channel_on(channel)
+        on = not is_attack_on(channel)
         set_channel_on(channel, on)
     await message.answer(
         f"🔥 Атаки от @BotovodX ВКЛЮЧЕНЫ — бью по новым постам." if on
@@ -628,15 +460,13 @@ async def cmd_attackmode(message: Message):
         on = parts[1].lower() in ("on", "вкл", "1")
         set_attack(on)
         # также включаем/выключаем все каналы
-        set_channel_on("slay_awards", on)
-        set_channel_on("streaminside", on)
-        set_channel_on("BotovodX", on)
+        for ch in CHANNELS:
+            set_channel_on(ch, on)
     else:
         on = not is_attack_on()
         set_attack(on)
-        set_channel_on("slay_awards", on)
-        set_channel_on("streaminside", on)
-        set_channel_on("BotovodX", on)
+        for ch in CHANNELS:
+            set_channel_on(ch, on)
     await message.answer(
         "🔥 Общий режим атак ВКЛЮЧЕН — бью по всем новым постам." if on
         else "🔴 Общий режим атак ВЫКЛЮЧЕН — молчу, только слежу.")
@@ -668,24 +498,6 @@ async def cmd_remind(message: Message):
         return
     set_remind_minutes(n)
     await message.answer(f"✅ Принято, напоминаю каждые {n} мин. Следилка подхватит на следующем цикле (≤60 сек).")
-
-
-CALLALL_FILE = f"{STATE_DIR}/callall.txt"
-
-
-def is_callall_on() -> bool:
-    """Авто-тег всех при новой атаке. По дефолту ВЫКЛ."""
-    try:
-        with open(CALLALL_FILE, encoding="utf-8") as f:
-            return f.read().strip().lower() == "on"
-    except FileNotFoundError:
-        return False
-
-
-def set_callall(on: bool) -> None:
-    with open(CALLALL_FILE, "w", encoding="utf-8") as f:
-        f.write("on" if on else "off")
-    print(f"Авто-callall при атаке: {'ВКЛ' if on else 'ВЫКЛ'}")
 
 
 @dp.message(Command("autocall"))
@@ -735,9 +547,7 @@ async def cmd_setthread(message: Message):
 async def userbot_get_members(chat_id: int) -> list[int] | None:
     """Достаём ВСЕХ участников группы через юзербот (Telethon). None = юзербот не настроен."""
     try:
-        import os
         # импортируем telethon из venv юзербота
-        import sys
         sys.path.insert(0, "/root/kazahstanos/projects/slay_userbot/venv/lib/python3.11/site-packages")
         from telethon import TelegramClient
         from telethon.tl.functions.channels import GetParticipantsRequest
@@ -861,9 +671,6 @@ async def cmd_callall(message: Message):
     if skipped:
         diag += f" Пропустил {skipped} (в муте)."
     await message.reply(diag)
-
-
-
 
 
 async def main():
