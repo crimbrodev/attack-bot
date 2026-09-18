@@ -1,5 +1,6 @@
 """Получение комментариев к посту канала через Telethon."""
 import asyncio
+import base
 from telethon import TelegramClient
 from config import USERBOT_API_ID, USERBOT_API_HASH, USERBOT_SESSION
 
@@ -56,6 +57,7 @@ async def get_post_commenters(channel: str, post_id: int) -> list[dict]:
                     "user_id": comment.sender_id,
                     "username": getattr(user, "username", "") or "",
                     "name": getattr(user, "first_name", "") or "",
+                    "text": comment.text or "",
                 })
 
         return commenters
@@ -91,7 +93,7 @@ def calc_squad_percentage(commenters: list[dict], squad_users: dict) -> tuple[in
 
     squad_count = sum(
         1 for c in commenters
-        if c["user_id"] in all_squad_ids
+        if c["user_id"] in all_squad_ids or "СЛАВА ТРЕТЬЕМУ ВЗВОДУ" in c.get("text", "").upper()
     )
 
     percentage = (squad_count / total) * 100
