@@ -1,6 +1,9 @@
 """Получение комментариев к посту канала через Telethon."""
+import asyncio
 from telethon import TelegramClient
 from config import USERBOT_API_ID, USERBOT_API_HASH, USERBOT_SESSION
+
+DELAY_BETWEEN_COMMENTS = 2  # секунды между пачками комментариев
 
 
 async def get_post_commenters(channel: str, post_id: int) -> list[dict]:
@@ -28,14 +31,25 @@ async def get_post_commenters(channel: str, post_id: int) -> list[dict]:
         if not message.replies or not message.replies.comments:
             return []
 
-        comments = await client.get_messages(
-            entity,
-            reply_to=post_id,
-            limit=100,
-        )
+        all_comments = []
+        offset_id = 0
+        while True:
+            batch = await client.get_messages(
+                entity,
+                reply_to=post_id,
+                limit=100,
+                offset_id=offset_id,
+            )
+            if not batch:
+                break
+            all_comments.extend(batch)
+            offset_id = batch[-1].id
+            if len(batch) < 100:
+                break
+            await asyncio.sleep(DELAY_BETWEEN_COMMENTS)
 
         commenters = []
-        for comment in comments:
+        for comment in all_comments:
             if comment.sender_id:
                 user = await comment.get_sender()
                 commenters.append({
