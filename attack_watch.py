@@ -115,13 +115,27 @@ async def attack(pid: int, post_text: str) -> None:
 
 async def remind(pid: int, minutes: int) -> None:
     groups = load_groups()
+
+    # Получаем комментарии и считаем % от взвода
+    squad_users = load_users()
+    try:
+        from comments import get_post_commenters, calc_squad_percentage
+        commenters = await get_post_commenters(CHANNEL, pid)
+        squad_count, total, pct = calc_squad_percentage(commenters, squad_users)
+    except Exception:
+        squad_count, total, pct = 0, 0, 0
+
+    pct_text = ""
+    if total > 0:
+        pct_text = f"\n\n💬 Комментариев: {total}, от взвода: {squad_count} ({pct:.0f}%)"
+
     for cid, cfg in groups.items():
         thread = cfg.get("thread")
         kwargs = {"message_thread_id": thread} if thread else {}
         try:
             await tg.send_message(
                 cid,
-                f"⏰ Прошло {minutes} мин с поста — пора АТАКОВАТЬ!\n{link(pid)}{base.SIGN}",
+                f"⏰ Прошло {minutes} мин с поста — пора АТАКОВАТЬ!\n{link(pid)}{pct_text}{base.SIGN}",
                 parse_mode="HTML", **kwargs)
             reset_group_errors(cid)
         except Exception as err:

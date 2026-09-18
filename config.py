@@ -32,9 +32,9 @@ POLL_SEC = 60
 MAX_GROUP_ATTEMPTS = 3  # автоудаление группы после N ошибок подряд
 
 # Userbot (Telethon)
-USERBOT_API_ID = int(os.environ.get("USERBOT_API_ID", "YOUR_API_ID"))
-USERBOT_API_HASH_FILE = os.environ.get("USERBOT_API_HASH_FILE", "")
-USERBOT_SESSION_DIR = os.environ.get("USERBOT_SESSION_DIR", "")
+USERBOT_API_ID = int(os.environ.get("USERBOT_API_ID", "0"))
+USERBOT_API_HASH = os.environ.get("USERBOT_API_HASH", "")
+USERBOT_SESSION = os.environ.get("USERBOT_SESSION", "")
 
 # Logging
 LOG_MAX_BYTES = int(os.environ.get("LOG_MAX_BYTES", str(5 * 1024 * 1024)))
