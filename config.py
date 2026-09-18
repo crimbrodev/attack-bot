@@ -30,6 +30,7 @@ DEFAULT_COUNT = 5
 DEFAULT_REMIND_MIN = 5
 POLL_SEC = 60
 MAX_GROUP_ATTEMPTS = 3  # автоудаление группы после N ошибок подряд
+WARNING_THRESHOLD = 42  # минимальный % комментариев от взвода
 
 # Userbot (Telethon)
 USERBOT_API_ID = int(os.environ.get("USERBOT_API_ID", "0"))

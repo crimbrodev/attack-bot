@@ -16,12 +16,13 @@ from watcher import parse_posts, fetch_preview, make_comment, DEFAULT_CHANNEL as
 
 from aiogram import Bot
 
-from config import BOT_TOKEN, POLL_SEC, MAX_GROUP_ATTEMPTS
+from config import BOT_TOKEN, POLL_SEC, MAX_GROUP_ATTEMPTS, WARNING_THRESHOLD
 from storage import (
     load_groups, load_last, save_last,
     is_attack_on, get_remind_minutes, is_callall_on,
     increment_group_errors, reset_group_errors, remove_group,
     build_tags_from_users, load_muted, load_users,
+    get_general_chat,
 )
 
 CHANNEL = os.environ.get("HERMES_CHANNEL", _WATCH_CHANNEL)
@@ -118,17 +119,16 @@ async def attack(pid: int, post_text: str) -> None:
         from comments import get_post_commenters, calc_squad_percentage
         commenters = await get_post_commenters(CHANNEL, pid)
         squad_count, total, pct = calc_squad_percentage(commenters, load_users())
-        if total > 0 and pct < 42:
-            for cid, cfg in load_groups().items():
-                thread = cfg.get("thread")
-                kwargs = {"message_thread_id": thread} if thread else {}
+        if total > 0 and pct < WARNING_THRESHOLD:
+            general = get_general_chat()
+            if general:
                 try:
                     await tg.send_message(
-                        cid,
+                        general,
                         f"⚠️ <b>ВНИМАНИЕ!</b> Под постом {link(pid)} "
                         f"взвод пишет только {pct:.0f}% комментариев ({squad_count}/{total})!\n\n"
-                        f"Цель — минимум 42%! Поднажмите, ребят! 💪🔥",
-                        parse_mode="HTML", **kwargs)
+                        f"Цель — минимум {WARNING_THRESHOLD}%! Поднажмите, ребят! 💪🔥",
+                        parse_mode="HTML")
                 except Exception:
                     pass
     except Exception:
@@ -160,14 +160,19 @@ async def remind(pid: int, minutes: int) -> None:
                 f"⏰ Прошло {minutes} мин с поста — пора АТАКОВАТЬ!\n{link(pid)}{pct_text}{base.SIGN}",
                 parse_mode="HTML", **kwargs)
             reset_group_errors(cid)
-            # Если взвод пишет меньше 42% — кричим
-            if total > 0 and pct < 42:
-                await tg.send_message(
-                    cid,
-                    f"⚠️ <b>ВНИМАНИЕ!</b> Под постом {link(pid)} "
-                    f"взвод пишет только {pct:.0f}% комментариев ({squad_count}/{total})!\n\n"
-                    f"Цель — минимум 42%! Поднажмите, ребят! 💪🔥",
-                    parse_mode="HTML", **kwargs)
+            # Если взвод пишет меньше 42% — кричим в общий чат
+            if total > 0 and pct < WARNING_THRESHOLD:
+                general = get_general_chat()
+                if general:
+                    try:
+                        await tg.send_message(
+                            general,
+                            f"⚠️ <b>ВНИМАНИЕ!</b> Под постом {link(pid)} "
+                            f"взвод пишет только {pct:.0f}% комментариев ({squad_count}/{total})!\n\n"
+                            f"Цель — минимум {WARNING_THRESHOLD}%! Поднажмите, ребят! 💪🔥",
+                            parse_mode="HTML")
+                    except Exception:
+                        pass
         except Exception as err:
             if "Not Found" in str(err):
                 errors = increment_group_errors(cid)

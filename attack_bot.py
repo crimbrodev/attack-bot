@@ -23,7 +23,7 @@ from storage import (
     is_callall_on, set_callall,
     get_remind_minutes, set_remind_minutes,
     increment_group_errors, reset_group_errors, remove_group,
-    load_last,
+    load_last, get_general_chat, set_general_chat,
 )
 
 def setup_logging(name: str = "bot") -> None:
@@ -509,6 +509,24 @@ async def cmd_remind(message: Message):
         return
     set_remind_minutes(n)
     await message.answer(f"✅ Принято, напоминаю каждые {n} мин. Следилка подхватит на следующем цикле (≤60 сек).")
+
+
+@dp.message(Command("setgeneral"))
+async def cmd_setgeneral(message: Message):
+    """Установить чат для предупреждений: /setgeneral (текущий чат), /setgeneral ID."""
+    if not base.is_allowed(message):
+        await message.answer(base.REFUSE_TEXT)
+        return
+    parts = (message.text or "").split()
+    if len(parts) < 2:
+        # Берём ID текущего чата
+        chat_id = str(message.chat.id)
+        set_general_chat(chat_id)
+        await message.answer(f"✅ Чат для предупреждений: {chat_id} ({message.chat.title or 'этот чат'})")
+        return
+    chat_id = parts[1]
+    set_general_chat(chat_id)
+    await message.answer(f"✅ Чат для предупреждений: {chat_id}")
 
 
 @dp.message(Command("autocall"))

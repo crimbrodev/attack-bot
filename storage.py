@@ -221,3 +221,17 @@ def get_remind_minutes() -> int:
 def set_remind_minutes(minutes: int) -> None:
     _write_text(REMIND_FILE, str(minutes))
     print(f"Интервал напоминалок: {minutes} мин")
+
+
+# === General chat for warnings ===
+GENERAL_FILE = STATE_DIR / "general.txt"
+
+
+def get_general_chat() -> str:
+    """ID чата куда слать предупреждения."""
+    return _read_text(GENERAL_FILE)
+
+
+def set_general_chat(chat_id: str) -> None:
+    _write_text(GENERAL_FILE, chat_id)
+    print(f"Чат для предупреждений: {chat_id}")
