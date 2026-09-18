@@ -112,6 +112,28 @@ async def attack(pid: int, post_text: str) -> None:
                     continue
             print(f"Атака в {cid} не ушла: {err}")
 
+    # Через 2 мин проверяем % и кричим если мало
+    await asyncio.sleep(120)
+    try:
+        from comments import get_post_commenters, calc_squad_percentage
+        commenters = await get_post_commenters(CHANNEL, pid)
+        squad_count, total, pct = calc_squad_percentage(commenters, load_users())
+        if total > 0 and pct < 42:
+            for cid, cfg in load_groups().items():
+                thread = cfg.get("thread")
+                kwargs = {"message_thread_id": thread} if thread else {}
+                try:
+                    await tg.send_message(
+                        cid,
+                        f"⚠️ <b>ВНИМАНИЕ!</b> Под постом {link(pid)} "
+                        f"взвод пишет только {pct:.0f}% комментариев ({squad_count}/{total})!\n\n"
+                        f"Цель — минимум 42%! Поднажмите, ребят! 💪🔥",
+                        parse_mode="HTML", **kwargs)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
 
 async def remind(pid: int, minutes: int) -> None:
     groups = load_groups()
@@ -138,6 +160,14 @@ async def remind(pid: int, minutes: int) -> None:
                 f"⏰ Прошло {minutes} мин с поста — пора АТАКОВАТЬ!\n{link(pid)}{pct_text}{base.SIGN}",
                 parse_mode="HTML", **kwargs)
             reset_group_errors(cid)
+            # Если взвод пишет меньше 42% — кричим
+            if total > 0 and pct < 42:
+                await tg.send_message(
+                    cid,
+                    f"⚠️ <b>ВНИМАНИЕ!</b> Под постом {link(pid)} "
+                    f"взвод пишет только {pct:.0f}% комментариев ({squad_count}/{total})!\n\n"
+                    f"Цель — минимум 42%! Поднажмите, ребят! 💪🔥",
+                    parse_mode="HTML", **kwargs)
         except Exception as err:
             if "Not Found" in str(err):
                 errors = increment_group_errors(cid)
