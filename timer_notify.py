@@ -35,14 +35,15 @@ tg = Bot(token=BOT_TOKEN)
 
 
 async def get_slowmode_info(client: TelegramClient) -> dict:
-    """Получает инфу о слаймоде в канале.
+    """Получает инфу о слаймоде в канале и связанном чате.
 
     Returns:
         {
             "enabled": bool,
             "slowmode_seconds": int | None,
-            "next_send_date": datetime | None,  # когда можно писать
-            "remaining": float,  # секунд до конца (0 = можно писать)
+            "next_send_date": datetime | None,
+            "remaining": float,
+            "source": str,  # откуда взята инфа
         }
     """
     entity = await client.get_entity(CHANNEL)
@@ -51,6 +52,20 @@ async def get_slowmode_info(client: TelegramClient) -> dict:
 
     slowmode_seconds = chat.slowmode_seconds or 0
     next_send = chat.slowmode_next_send_date
+    source = "channel"
+
+    # Если на канале нет слаймода — проверяем связанный чат (комментарии)
+    if not slowmode_seconds and chat.linked_chat_id:
+        try:
+            linked = await client.get_entity(chat.linked_chat_id)
+            full_linked = await client(GetFullChannelRequest(linked))
+            lc = full_linked.full_chat
+            if lc.slowmode_seconds:
+                slowmode_seconds = lc.slowmode_seconds
+                next_send = lc.slowmode_next_send_date
+                source = "linked_chat"
+        except Exception as e:
+            log.debug(f"Не удалось проверить linked_chat: {e}")
 
     now = time.time()
     remaining = 0.0
@@ -62,6 +77,7 @@ async def get_slowmode_info(client: TelegramClient) -> dict:
         "slowmode_seconds": slowmode_seconds,
         "next_send_date": next_send,
         "remaining": remaining,
+        "source": source,
     }
 
 
