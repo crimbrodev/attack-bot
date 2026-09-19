@@ -18,6 +18,7 @@ from config import (
     BOT_TOKEN, USERBOT_API_ID, USERBOT_API_HASH, USERBOT_SESSION,
     STATE_DIR,
 )
+from logging.handlers import RotatingFileHandler
 
 # === Настройки ===
 TIMER_GROUP = -5195152951  # "уведомления о таймере"
@@ -25,59 +26,51 @@ CHANNEL = "slay_awards"
 POLL_INTERVAL = 30  # секунд между проверками
 NOTIFY_BEFORE = 5  # уведомлять за N секунд до конца
 
-log_file = STATE_DIR / "timer_notify.log"
-handler = logging.FileHandler(log_file, encoding="utf-8")
-handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-logging.basicConfig(level=logging.INFO, handlers=[handler, logging.StreamHandler()])
 log = logging.getLogger("timer")
+log.setLevel(logging.DEBUG)
+
+# Файл с ротацией
+fh = RotatingFileHandler(
+    STATE_DIR / "timer_notify.log",
+    maxBytes=5 * 1024 * 1024,
+    backupCount=3,
+    encoding="utf-8",
+)
+fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)-7s %(message)s"))
+log.addHandler(fh)
+
+# Консоль
+ch = logging.StreamHandler()
+ch.setFormatter(logging.Formatter("%(asctime)s %(levelname)-7s %(message)s"))
+log.addHandler(ch)
 
 tg = Bot(token=BOT_TOKEN)
 
 
 async def get_slowmode_info(client: TelegramClient) -> dict:
-    """Получает инфу о слаймоде в канале и связанном чате.
-
-    Returns:
-        {
-            "enabled": bool,
-            "slowmode_seconds": int | None,
-            "next_send_date": datetime | None,
-            "remaining": float,
-            "source": str,  # откуда взята инфа
-        }
-    """
+    """Получает инфу о слаймоде в связанном чате (комментарии)."""
     entity = await client.get_entity(CHANNEL)
     full = await client(GetFullChannelRequest(entity))
     chat = full.full_chat
 
-    slowmode_seconds = chat.slowmode_seconds or 0
-    next_send = chat.slowmode_next_send_date
-    source = "channel"
+    if not chat.linked_chat_id:
+        return {"enabled": False, "slowmode_seconds": 0, "next_send_date": None, "remaining": 0.0}
 
-    # Если на канале нет слаймода — проверяем связанный чат (комментарии)
-    if not slowmode_seconds and chat.linked_chat_id:
-        try:
-            linked = await client.get_entity(chat.linked_chat_id)
-            full_linked = await client(GetFullChannelRequest(linked))
-            lc = full_linked.full_chat
-            if lc.slowmode_seconds:
-                slowmode_seconds = lc.slowmode_seconds
-                next_send = lc.slowmode_next_send_date
-                source = "linked_chat"
-        except Exception as e:
-            log.debug(f"Не удалось проверить linked_chat: {e}")
+    linked = await client.get_entity(chat.linked_chat_id)
+    full_linked = await client(GetFullChannelRequest(linked))
+    lc = full_linked.full_chat
+
+    slowmode_seconds = lc.slowmode_seconds or 0
+    next_send = lc.slowmode_next_send_date
 
     now = time.time()
-    remaining = 0.0
-    if next_send:
-        remaining = max(0, next_send - now)
+    remaining = max(0, next_send - now) if next_send else 0.0
 
     return {
         "enabled": slowmode_seconds > 0,
         "slowmode_seconds": slowmode_seconds,
         "next_send_date": next_send,
         "remaining": remaining,
-        "source": source,
     }
 
 
@@ -108,36 +101,35 @@ async def main() -> None:
             info = await get_slowmode_info(client)
 
             if not info["enabled"]:
-                # Слаймода нет — сбрасываем флаг
                 if notified:
                     notified = False
                     log.info("Слаймод выключен, сброшен флаг")
+                log.debug("Слаймода нет")
                 await asyncio.sleep(POLL_INTERVAL)
                 continue
 
             remaining = info["remaining"]
+            sm = info["slowmode_seconds"]
 
             if remaining <= 0:
-                # Таймер кончился — можно писать!
                 if not notified:
                     await notify_bot(
                         "✅ <b>Слаймод закончился!</b>\n"
                         "Можно писать комментарий 🚀"
                     )
                     notified = True
+                    log.info(f"Слаймод ({sm}с) закончился — уведомление отправлено")
             else:
-                # Таймер ещё идёт
                 notified = False
+                mins = int(remaining) // 60
+                secs = int(remaining) % 60
+                log.debug(f"Слаймод {sm}с, осталось {mins}м {secs}с")
 
-                # Уведомляем за N секунд до конца
                 if remaining <= NOTIFY_BEFORE and remaining > 0:
-                    mins = int(remaining) // 60
-                    secs = int(remaining) % 60
                     await notify_bot(
                         f"⏳ Слаймод заканчивается через {mins} мин {secs} сек..."
                     )
-
-            log.debug(f"remaining={remaining:.0f}s, notified={notified}")
+                    log.info(f"Предупреждение: осталось {mins}м {secs}с")
 
         except Exception as e:
             log.error(f"Ошибка: {e}")
