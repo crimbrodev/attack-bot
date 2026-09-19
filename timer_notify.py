@@ -64,7 +64,15 @@ async def get_slowmode_info(client: TelegramClient) -> dict:
     next_send = lc.slowmode_next_send_date
 
     now = time.time()
-    remaining = max(0, next_send - now) if next_send else 0.0
+    if next_send:
+        # Telegram API отдаёт datetime, конвертируем в timestamp
+        if hasattr(next_send, 'timestamp'):
+            next_ts = next_send.timestamp()
+        else:
+            next_ts = float(next_send)
+        remaining = max(0, next_ts - now)
+    else:
+        remaining = 0.0
 
     return {
         "enabled": slowmode_seconds > 0,
