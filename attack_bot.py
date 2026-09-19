@@ -122,7 +122,7 @@ def _watched_channels() -> list[str]:
 async def cmd_start(message: Message):
     # личка — как первый бот: подписка на черновики + помощь
     if message.chat.type == "private":
-        if not base.is_allowed(message):
+        if not base.is_allowed(message) or not base.is_allowed_group(message):
             await message.answer(base.REFUSE_TEXT)
             return
         base.save_sub(message.chat.id)
@@ -136,9 +136,13 @@ async def cmd_start(message: Message):
             "• /status — что на прицеле. /stop — отписаться."
         )
         return
-    # группа — регистрация на атаку
+    # группа — регистрация на атаку (только если уже зарегистрирована или главная группа)
     g = load_groups()
     cid = str(message.chat.id)
+    ALLOWED_MAIN_GROUP = "-1004365297986"
+    if cid not in g and cid != ALLOWED_MAIN_GROUP:
+        await message.answer("❌ Этот бот не для этой группы.")
+        return
     if cid not in g:
         g[cid] = {"count": DEFAULT_COUNT, "title": message.chat.title or message.chat.first_name or cid}
         save_groups(g)
@@ -159,7 +163,7 @@ async def cmd_start(message: Message):
 
 @dp.message(Command("setcount"))
 async def cmd_setcount(message: Message):
-    if not base.is_allowed(message):
+    if not base.is_allowed(message) or not base.is_allowed_group(message):
         await message.answer(base.REFUSE_TEXT)
         return
     parts = (message.text or "").split()
@@ -236,7 +240,7 @@ async def cmd_muted_list(message: Message):
         await message.answer("Команда для групп. 👥")
         return
     # простая защита: только админы чата или владелец из whitelist
-    if not base.is_allowed(message):
+    if not base.is_allowed(message) or not base.is_allowed_group(message):
         await message.answer(base.REFUSE_TEXT)
         return
     cid = str(message.chat.id)
@@ -282,7 +286,7 @@ async def cmd_unmute(message: Message):
 @dp.message(Command("call"))
 async def cmd_call_short(message: Message):
     """Короткий алиас /autocall: /call on|off — рубильник авто-зазывалки при атаке."""
-    if not base.is_allowed(message):
+    if not base.is_allowed(message) or not base.is_allowed_group(message):
         await message.answer(base.REFUSE_TEXT)
         return
     parts = (message.text or "").split()
@@ -326,7 +330,7 @@ async def cmd_muteuser(message: Message):
     if message.chat.type not in ("group", "supergroup"):
         await message.answer("Команда для групп. 👥")
         return
-    if not base.is_allowed(message):
+    if not base.is_allowed(message) or not base.is_allowed_group(message):
         await message.answer(base.REFUSE_TEXT)
         return
     target = await _resolve_target_user(message)
@@ -345,7 +349,7 @@ async def cmd_unmuteuser(message: Message):
     if message.chat.type not in ("group", "supergroup"):
         await message.answer("Команда для групп. 👥")
         return
-    if not base.is_allowed(message):
+    if not base.is_allowed(message) or not base.is_allowed_group(message):
         await message.answer(base.REFUSE_TEXT)
         return
     target = await _resolve_target_user(message)
@@ -364,7 +368,7 @@ async def handle_text(message: Message):
     Регексп '^(?!/)' отсекает команды — /remind и прочие уйдут в свои хендлеры."""
     if message.chat.type != "private":
         return
-    if not base.is_allowed(message):
+    if not base.is_allowed(message) or not base.is_allowed_group(message):
         await message.reply(base.REFUSE_TEXT)
         return
     post_text = message.text or message.caption
@@ -487,7 +491,7 @@ async def cmd_attackmode(message: Message):
 @dp.message(Command("remind"))
 async def cmd_remind(message: Message):
     """Интервал напоминалок в минутах: /remind, /remind N (1-1440)."""
-    if not base.is_allowed(message):
+    if not base.is_allowed(message) or not base.is_allowed_group(message):
         await message.answer(base.REFUSE_TEXT)
         return
     parts = (message.text or "").split()
@@ -515,7 +519,7 @@ async def cmd_remind(message: Message):
 @dp.message(Command("setgeneral"))
 async def cmd_setgeneral(message: Message):
     """Установить чат для предупреждений: /setgeneral (текущий чат), /setgeneral ID."""
-    if not base.is_allowed(message):
+    if not base.is_allowed(message) or not base.is_allowed_group(message):
         await message.answer(base.REFUSE_TEXT)
         return
     parts = (message.text or "").split()
@@ -533,7 +537,7 @@ async def cmd_setgeneral(message: Message):
 @dp.message(Command("warnings"))
 async def cmd_warnings(message: Message):
     """Рубильник предупреждений о % взвода: /warnings, /warnings on, /warnings off."""
-    if not base.is_allowed(message):
+    if not base.is_allowed(message) or not base.is_allowed_group(message):
         await message.answer(base.REFUSE_TEXT)
         return
     parts = (message.text or "").split()
@@ -551,7 +555,7 @@ async def cmd_warnings(message: Message):
 async def cmd_autocall(message: Message):
     """Рубильник авто-тега всех при новой атаке: /autocall, /autocall on, /autocall off.
     ВКЛ = на КАЖДЫЙ новый пост в @slay_awards бот сразу пингует ВСЕХ участников группы."""
-    if not base.is_allowed(message):
+    if not base.is_allowed(message) or not base.is_allowed_group(message):
         await message.answer(base.REFUSE_TEXT)
         return
     parts = (message.text or "").split()

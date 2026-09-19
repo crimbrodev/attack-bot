@@ -29,6 +29,12 @@ def is_allowed(message) -> bool:
         return False
     return message.from_user.id in ALLOWED_USERS
 
+
+def is_allowed_group(message) -> bool:
+    """Проверяет что команда из разрешённой группы."""
+    ALLOWED_MAIN_GROUP = "-1004365297986"
+    return str(message.chat.id) == ALLOWED_MAIN_GROUP
+
 def save_sub(chat_id: int) -> None:
     """Сохраняет подписку (chat_id) в subs.json."""
     try:
