@@ -15,7 +15,7 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandStart
 from aiogram.types import BotCommand, Message, ChatMemberUpdated
 
-from config import BOT_TOKEN, DEFAULT_COUNT, MAX_GROUP_ATTEMPTS, USERBOT_API_ID, USERBOT_API_HASH_FILE, USERBOT_SESSION_DIR, CHANNELS
+from config import BOT_TOKEN, DEFAULT_COUNT, MAX_GROUP_ATTEMPTS, USERBOT_API_ID, USERBOT_API_HASH, USERBOT_SESSION, CHANNELS
 from storage import (
     load_groups, save_groups, load_users, remember_user,
     build_tags_from_users, load_muted, save_muted, is_muted, set_muted,
@@ -597,19 +597,11 @@ async def userbot_get_members(chat_id: int) -> list[int] | None:
         from telethon import TelegramClient
         from telethon.tl.functions.channels import GetParticipantsRequest
         from telethon.tl.types import ChannelParticipantsSearch
-        if not os.path.exists(USERBOT_API_HASH_FILE):
+        if not USERBOT_API_HASH:
             return None
-        # ищем любую .session в папке юзербота
-        sess = None
-        for fn in os.listdir(USERBOT_SESSION_DIR):
-            if fn.endswith(".session"):
-                sess = os.path.join(USERBOT_SESSION_DIR, fn[:-len(".session")])
-                break
-        if not sess:
+        if not USERBOT_SESSION:
             return None
-        with open(USERBOT_API_HASH_FILE) as f:
-            api_hash = f.read().strip()
-        client = TelegramClient(sess, USERBOT_API_ID, api_hash)
+        client = TelegramClient(USERBOT_SESSION, USERBOT_API_ID, USERBOT_API_HASH)
         await client.connect()
         if not await client.is_user_authorized():
             await client.disconnect()
