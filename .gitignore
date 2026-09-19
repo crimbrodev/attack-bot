@@ -11,3 +11,7 @@ muted.json
 attack.txt
 callall.txt
 remind.txt
+.pids/
+general.txt
+warnings_on.txt
+comment_stats.json
