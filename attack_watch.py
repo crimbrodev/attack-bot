@@ -115,7 +115,10 @@ async def attack(pid: int, post_text: str) -> None:
             print(f"Атака в {cid} не ушла: {err}")
 
     # Через 2 мин проверяем % и кричим если мало
+    # (только для основного канала, чтобы не дублировать от streaminside/BotovodX)
     await asyncio.sleep(120)
+    if CHANNEL != "slay_awards":
+        return
     try:
         from comments import get_post_commenters, calc_squad_percentage
         commenters = await get_post_commenters(CHANNEL, pid)
@@ -161,8 +164,8 @@ async def remind(pid: int, minutes: int) -> None:
                 f"⏰ Прошло {minutes} мин с поста — пора АТАКОВАТЬ!\n{link(pid)}{pct_text}{base.SIGN}",
                 parse_mode="HTML", **kwargs)
             reset_group_errors(cid)
-            # Если взвод пишет меньше 42% — кричим в общий чат
-            if total > 0 and pct < WARNING_THRESHOLD and is_warnings_on():
+            # Если взвод пишет меньше 42% — кричим в общий чат (только slay_awards)
+            if total > 0 and pct < WARNING_THRESHOLD and is_warnings_on() and CHANNEL == "slay_awards":
                 general = get_general_chat()
                 if general:
                     try:
