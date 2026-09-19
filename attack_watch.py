@@ -74,6 +74,7 @@ async def attack(pid: int, post_text: str) -> None:
                     cid,
                     f"✍️ Черновик №{i} (жми значок копирования):\n<pre>{safe}</pre>",
                     parse_mode="HTML", **kwargs)
+                await asyncio.sleep(2)  # пауза между черновиками чтобы Groq не задdosили
             # если включён авто-callall — сразу пингуем всех по базе (ZazyvalaTag2Bot-стиль)
             if is_callall_on():
                 try:
