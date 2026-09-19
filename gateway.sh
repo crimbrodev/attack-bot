@@ -38,11 +38,7 @@ start_one() {
 stop_one() {
     local name="$1"
     local pid=$(get_pid "$name")
-    if [ -z "$pid" ]; then
-        echo -e "  ${YELLOW}●${NC} $name — не запущен"
-        return
-    fi
-    if kill -0 "$pid" 2>/dev/null; then
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
         kill "$pid" 2>/dev/null
         sleep 0.5
         kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null
@@ -87,6 +83,11 @@ case "$CMD" in
         stop_one "watch-stream"
         stop_one "watch-botovod"
         stop_one "timer"
+        # Убиваем сирот если остались
+        pkill -f "python attack_bot.py" 2>/dev/null
+        pkill -f "python attack_watch.py" 2>/dev/null
+        pkill -f "python timer_notify.py" 2>/dev/null
+        sleep 1
         echo ""
         echo -e "${RED}✅ Все компоненты остановлены${NC}"
         ;;
