@@ -15,10 +15,12 @@ from telethon.tl.functions.channels import GetFullChannelRequest
 from aiogram import Bot
 
 from config import (
-    BOT_TOKEN, USERBOT_API_ID, USERBOT_API_HASH, USERBOT_SESSION,
+    BOT_TOKEN, USERBOT_API_ID, USERBOT_API_HASH,
     STATE_DIR,
 )
 from logging.handlers import RotatingFileHandler
+
+USERBOT_SESSION_TIMER = "timer_session"  # отдельная сессия чтобы не конфликтовать с comments.py
 
 # === Настройки ===
 TIMER_GROUP = -5195152951  # "уведомления о таймере"
@@ -95,7 +97,7 @@ async def main() -> None:
     log.info("Запуск timer_notify...")
 
     client = TelegramClient(
-        USERBOT_SESSION,
+        USERBOT_SESSION_TIMER,
         USERBOT_API_ID,
         USERBOT_API_HASH,
     )
