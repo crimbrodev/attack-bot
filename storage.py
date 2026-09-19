@@ -235,3 +235,20 @@ def get_general_chat() -> str:
 def set_general_chat(chat_id: str) -> None:
     _write_text(GENERAL_FILE, chat_id)
     print(f"Чат для предупреждений: {chat_id}")
+
+
+# === Warnings toggle ===
+WARNINGS_FILE = STATE_DIR / "warnings_on.txt"
+
+
+def is_warnings_on() -> bool:
+    """Включены ли предупреждения о %% взвода."""
+    val = _read_text(WARNINGS_FILE)
+    if val == "":
+        return True  # по умолчанию включены
+    return val != "off"
+
+
+def set_warnings(on: bool) -> None:
+    _write_text(WARNINGS_FILE, "on" if on else "off")
+    print(f"Предупреждения: {'вкл' if on else 'выкл'}")

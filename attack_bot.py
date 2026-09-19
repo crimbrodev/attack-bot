@@ -24,6 +24,7 @@ from storage import (
     get_remind_minutes, set_remind_minutes,
     increment_group_errors, reset_group_errors, remove_group,
     load_last, get_general_chat, set_general_chat,
+    is_warnings_on, set_warnings,
 )
 
 def setup_logging(name: str = "bot") -> None:
@@ -527,6 +528,23 @@ async def cmd_setgeneral(message: Message):
     chat_id = parts[1]
     set_general_chat(chat_id)
     await message.answer(f"✅ Чат для предупреждений: {chat_id}")
+
+
+@dp.message(Command("warnings"))
+async def cmd_warnings(message: Message):
+    """Рубильник предупреждений о % взвода: /warnings, /warnings on, /warnings off."""
+    if not base.is_allowed(message):
+        await message.answer(base.REFUSE_TEXT)
+        return
+    parts = (message.text or "").split()
+    if len(parts) >= 2 and parts[1].lower() in ("on", "off", "вкл", "выкл", "1", "0"):
+        on = parts[1].lower() in ("on", "вкл", "1")
+        set_warnings(on)
+    else:
+        on = not is_warnings_on()
+        set_warnings(on)
+    status = "включены ✅" if on else "выключены ❌"
+    await message.answer(f"Предупреждения о % взвода: {status}")
 
 
 @dp.message(Command("autocall"))

@@ -22,7 +22,7 @@ from storage import (
     is_attack_on, get_remind_minutes, is_callall_on,
     increment_group_errors, reset_group_errors, remove_group,
     build_tags_from_users, load_muted, load_users,
-    get_general_chat,
+    get_general_chat, is_warnings_on,
 )
 
 CHANNEL = os.environ.get("HERMES_CHANNEL", _WATCH_CHANNEL)
@@ -120,7 +120,7 @@ async def attack(pid: int, post_text: str) -> None:
         from comments import get_post_commenters, calc_squad_percentage
         commenters = await get_post_commenters(CHANNEL, pid)
         squad_count, total, pct = calc_squad_percentage(commenters, load_users())
-        if total > 0 and pct < WARNING_THRESHOLD:
+        if total > 0 and pct < WARNING_THRESHOLD and is_warnings_on():
             general = get_general_chat()
             if general:
                 try:
@@ -162,7 +162,7 @@ async def remind(pid: int, minutes: int) -> None:
                 parse_mode="HTML", **kwargs)
             reset_group_errors(cid)
             # Если взвод пишет меньше 42% — кричим в общий чат
-            if total > 0 and pct < WARNING_THRESHOLD:
+            if total > 0 and pct < WARNING_THRESHOLD and is_warnings_on():
                 general = get_general_chat()
                 if general:
                     try:
