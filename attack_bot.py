@@ -228,15 +228,15 @@ async def cmd_settings(message: Message):
     if message.chat.type not in ("group", "supergroup"):
         await message.answer("Настройки только в группе.")
         return
-    from admin_panel import _is_group_admin, _full_menu_kb, _zazyvala_menu_kb
-    # Создаём faux-callback чтобы использовать _is_group_admin
+    from admin_panel import _is_admin, _full_menu_kb, _zazyvala_menu_kb
+    # Создаём faux-callback чтобы использовать _is_admin
     class _FakeCB:
         def __init__(self, bot_inst, user_id, chat_id):
             self.bot = bot_inst
             self.from_user = type('obj', (object,), {'id': user_id})()
             self.message = type('obj', (object,), {'chat': type('obj', (object,), {'id': chat_id})()})()
     fake = _FakeCB(bot, message.from_user.id, message.chat.id)
-    if not await _is_group_admin(fake):
+    if not await _is_admin(fake):
         await message.answer("❌ Только для админов группы.")
         return
     title = message.chat.title or str(message.chat.id)
