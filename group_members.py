@@ -35,8 +35,6 @@ async def fetch_group_members(group_id: int) -> dict:
             if not result.users:
                 break
             for user in result.users:
-                if user.bot:
-                    continue
                 name = (user.first_name or '') + ' ' + (user.last_name or '')
                 name = name.strip() or str(user.id)
                 members[str(user.id)] = {
