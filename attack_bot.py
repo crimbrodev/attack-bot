@@ -256,6 +256,17 @@ async def cmd_mute(message: Message):
         return
     if not message.from_user:
         return
+    # Проверка: кто может мутить себя
+    from storage import get_call_setting
+    who = get_call_setting("who_can_mute")
+    if who == "admins":
+        try:
+            member = await bot.get_chat_member(message.chat.id, message.from_user.id)
+            if member.status not in ("administrator", "creator"):
+                await message.answer("❌ Только админы могут использовать /mute.")
+                return
+        except Exception:
+            pass
     uid = message.from_user.id
     now_muted = set_muted(message.chat.id, uid, True)
     if now_muted:
@@ -679,6 +690,22 @@ async def cmd_callall(message: Message):
     parts = (message.text or "").split(maxsplit=1)
     extra = parts[1].strip() if len(parts) > 1 else "Все на атаку! 🔥"
 
+    # Проверка: кто может делать /callall
+    from storage import get_call_setting
+    who = get_call_setting("who_can_call")
+    if who == "admins":
+        try:
+            member = await bot.get_chat_member(message.chat.id, message.from_user.id)
+            if member.status not in ("administrator", "creator"):
+                await message.answer("❌ Только админы могут делать /callall.")
+                return
+        except Exception:
+            pass
+
+    # Настройки зазывалы
+    EMOJIS_PER_MSG = get_call_setting("mentions_per_msg")
+    MSG_DELAY = get_call_setting("msg_delay")
+
     # 1) пытаемся через Telethon получить всех участников
     users_here = load_users().get(cid, {})
     member_count = len(users_here)
@@ -733,21 +760,19 @@ async def cmd_callall(message: Message):
         emoji = random.choice(EMOJIS)
         emoji_tags.append(f'<a href="tg://user?id={uid_key}">{emoji}</a>')
 
-    # Каждое сообщение: заголовок + 5 эмодзи-тегов (как Zazyvala)
-    EMOJIS_PER_MSG = 5
+    # Каждое сообщение: заголовок + N эмодзи-тегов (из настроек)
     n_chunks = (len(emoji_tags) + EMOJIS_PER_MSG - 1) // EMOJIS_PER_MSG
     sent = 0
     for ci in range(n_chunks):
         batch = emoji_tags[ci * EMOJIS_PER_MSG : (ci + 1) * EMOJIS_PER_MSG]
-        emojis_line = "  ".join(batch) + "\u200b"  # zero-width space для разделения ссылок
+        emojis_line = "  ".join(batch) + "\u200b"
 
-        # Заголовок в КАЖДОМ сообщении (как Zazyvala)
         text = f"{extra}\n\n{emojis_line}"
 
         try:
             await bot.send_message(message.chat.id, text, parse_mode="HTML")
             sent += len(batch)
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(MSG_DELAY)
         except Exception as e:
             print(f"callall chunk {ci}: {e}")
             break

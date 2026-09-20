@@ -79,7 +79,7 @@ async def attack(pid: int, post_text: str) -> None:
             if is_callall_on():
                 try:
                     import random as _rnd
-                    from storage import load_muted, load_users
+                    from storage import load_muted, load_users, get_call_setting
                     ALL_EMOJIS = ["🥢", "🧎🏿‍♂️", "👜", "🧚🏻‍♂️", "🐯", "👩🏽‍⚖️", "🫱🏼", "👨🏾‍🦳", "🤘🏼", "👨🏽‍⚕️",
                               "🧨", "⛄️", "😉", "🙍🏽‍♂️", "👩🏽‍🎤", "👩🏽‍🚒", "🙋🏽‍♂️", "🤩", "⛹🏻‍♂", "🚃",
                               "🏋🏻‍♀", "🦈", "🙋🏻‍♀️", "🏋‍♀", "👩🏻‍💻", "💏", "👨🏾‍✈️", "👴🏻", "🕵️‍♀️",
@@ -98,19 +98,19 @@ async def attack(pid: int, post_text: str) -> None:
                         active.append((uid, info))
                     if active:
                         _rnd.shuffle(active)
-                        # Каждый эмодзи = кликабельный тег юзера
+                        per_msg = get_call_setting("mentions_per_msg")
+                        msg_delay = get_call_setting("msg_delay")
                         emoji_tags = []
                         for uid, info in active:
                             emoji = _rnd.choice(ALL_EMOJIS)
                             emoji_tags.append(f'<a href="tg://user?id={uid}">{emoji}</a>')
-                        per_msg = 5
                         n_chunks = (len(emoji_tags) + per_msg - 1) // per_msg
                         for ci in range(n_chunks):
                             batch = emoji_tags[ci * per_msg : (ci + 1) * per_msg]
                             emojis_line = "  ".join(batch) + "\u200b"
                             text = f"📢 СБОР! Новый пост вышел, го атаковать!\n\n{emojis_line}"
                             await tg.send_message(int(cid), text, parse_mode="HTML", **kwargs)
-                            await asyncio.sleep(0.5)
+                            await asyncio.sleep(msg_delay)
                         await tg.send_message(int(cid), "Призыв окончен.", **kwargs)
                         print(f"callall: позвал {len(active)} эмодзи-пингов в {cid}")
                 except Exception as e:

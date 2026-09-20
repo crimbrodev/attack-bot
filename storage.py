@@ -252,3 +252,45 @@ def is_warnings_on() -> bool:
 def set_warnings(on: bool) -> None:
     _write_text(WARNINGS_FILE, "on" if on else "off")
     print(f"Предупреждения: {'вкл' if on else 'выкл'}")
+
+
+# ═══════════════════════════════════════
+#  НАСТРОЙКИ ЗАЗЫВАЛЫ (call_settings.json)
+# ═══════════════════════════════════════
+
+CALL_SETTINGS_FILE = STATE_DIR / "call_settings.json"
+
+# Дефолты настроек зазывалы
+CALL_DEFAULTS = {
+    "who_can_mute": "all",        # кто может мутить себя: all / admins
+    "who_can_call": "all",        # кто может делать /callall: all / admins
+    "who_can_settings": "admins", # кто может открывать настройки: all / admins
+    "auto_delete": False,         # автоудаление сообщений созыва
+    "delete_delay": 0,            # задержка удаления (сек), 0 = не удалять
+    "msg_delay": 0.5,             # задержка между сообщениями созыва (сек)
+    "mentions_per_msg": 5,        # количество упоминаний в одном сообщении
+}
+
+
+def _load_call_settings() -> dict:
+    """Загружает настройки зазывалы с дефолтами."""
+    data = _read_json(CALL_SETTINGS_FILE)
+    result = dict(CALL_DEFAULTS)
+    result.update(data)
+    return result
+
+
+def _save_call_settings(data: dict) -> None:
+    _write_json(CALL_SETTINGS_FILE, data)
+
+
+def get_call_setting(key: str):
+    """Получить настройку зазывалы по ключу."""
+    return _load_call_settings().get(key, CALL_DEFAULTS.get(key))
+
+
+def set_call_setting(key: str, value) -> None:
+    """Установить настройку зазывалы."""
+    data = _load_call_settings()
+    data[key] = value
+    _save_call_settings(data)
