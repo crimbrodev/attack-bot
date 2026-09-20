@@ -41,7 +41,6 @@ def _is_allowed(chat_id: int) -> bool:
 def _full_menu_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📢 Настройки зазывалы", callback_data="adm:zazyvala")],
-        [InlineKeyboardButton(text="⚡ Настройки созыва", callback_data="adm:calls")],
         [InlineKeyboardButton(text="⚔️ Управление атаками", callback_data="adm:attacks")],
         [InlineKeyboardButton(text="⚙️ Другое", callback_data="adm:other")],
         [InlineKeyboardButton(text="❌ Закрыть", callback_data="adm:close")],
@@ -51,7 +50,6 @@ def _full_menu_kb() -> InlineKeyboardMarkup:
 def _zazyvala_menu_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📢 Настройки зазывалы", callback_data="adm:zazyvala")],
-        [InlineKeyboardButton(text="⚡ Настройки созыва", callback_data="adm:calls")],
         [InlineKeyboardButton(text="❌ Закрыть", callback_data="adm:close")],
     ])
 
@@ -371,9 +369,70 @@ async def cb_z_per_msg_apply(cb: CallbackQuery):
 
 
 # ═══════════════════════════════════════
-#  НАСТРОЙКИ СОЗЫВА (атаки)
+#  УПРАВЛЕНИЕ АТАКАМИ (только разрешённые)
+#  включает настройки созыва (черновики, напоминалки)
 # ═══════════════════════════════════════
 
+def _attacks_kb() -> InlineKeyboardMarkup:
+    all_on = is_attack_on()
+    buttons = []
+    for ch in CHANNELS:
+        ch_on = is_attack_on(ch)
+        icon = "✅" if ch_on else "❌"
+        buttons.append([InlineKeyboardButton(
+            text=f"{icon} @{ch}",
+            callback_data=f"adm:attack:{ch}",
+        )])
+    buttons.append([InlineKeyboardButton(
+        text=f"{'🔴' if all_on else '🟢'} Всё {'выкл' if all_on else 'вкл'}",
+        callback_data="adm:attack:all",
+    )])
+    buttons.append([InlineKeyboardButton(text="⚡ Настройки созыва", callback_data="adm:calls")])
+    buttons.append([InlineKeyboardButton(text="↩️ Назад", callback_data="adm:menu")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+@router.callback_query(F.data == "adm:attacks")
+async def cb_attacks_menu(cb: CallbackQuery):
+    if not await _is_admin(cb):
+        await cb.answer("Только для админов группы.", show_alert=True)
+        return
+    if not _is_allowed(cb.message.chat.id):
+        await cb.answer("Атаки настраиваются только в основной группе.", show_alert=True)
+        return
+    await cb.message.edit_text(
+        "⚔️ <b>Управление атаками:</b>\nНажми на канал чтобы вкл/выкл.",
+        parse_mode=ParseMode.HTML,
+        reply_markup=_attacks_kb(),
+    )
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("adm:attack:"))
+async def cb_attack_toggle(cb: CallbackQuery):
+    if not await _is_admin(cb):
+        await cb.answer("Только для админов группы.", show_alert=True)
+        return
+    if not _is_allowed(cb.message.chat.id):
+        await cb.answer("Атаки настраиваются только в основной группе.", show_alert=True)
+        return
+    ch = cb.data.split(":")[-1]
+    if ch == "all":
+        new_state = not is_attack_on()
+        set_attack(new_state)
+        for c in CHANNELS:
+            set_channel_on(c, new_state)
+        status = "ВКЛ" if new_state else "ВЫКЛ"
+        await cb.answer(f"Все атаки: {status}", show_alert=True)
+    else:
+        on = not is_attack_on(ch)
+        set_channel_on(ch, on)
+        status = "ВКЛ" if on else "ВЫКЛ"
+        await cb.answer(f"@{ch}: {status}", show_alert=True)
+    await cb_attacks_menu(cb)
+
+
+# --- Настройки созыва (черновики, напоминалки) — внутри атак ---
 def _calls_kb(cid: str) -> InlineKeyboardMarkup:
     g = load_groups()
     count = g.get(cid, {}).get("count", 5)
@@ -385,7 +444,7 @@ def _calls_kb(cid: str) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text=f"🔔 Напоминалка: каждые {remind} мин", callback_data="adm:remind")],
         [InlineKeyboardButton(text=f"📢 Авто-тег всех: {autocall}", callback_data="adm:autocall")],
         [InlineKeyboardButton(text=f"⚠️ Предупреждения взвода: {warnings}", callback_data="adm:warnings")],
-        [InlineKeyboardButton(text="↩️ Назад", callback_data="adm:menu")],
+        [InlineKeyboardButton(text="↩️ Назад", callback_data="adm:attacks")],
     ])
 
 
@@ -512,68 +571,6 @@ async def cb_warnings_toggle(cb: CallbackQuery):
         parse_mode=ParseMode.HTML,
         reply_markup=_calls_kb(cid),
     )
-
-
-# ═══════════════════════════════════════
-#  УПРАВЛЕНИЕ АТАКАМИ (только разрешённые)
-# ═══════════════════════════════════════
-
-def _attacks_kb() -> InlineKeyboardMarkup:
-    all_on = is_attack_on()
-    buttons = []
-    for ch in CHANNELS:
-        ch_on = is_attack_on(ch)
-        icon = "✅" if ch_on else "❌"
-        buttons.append([InlineKeyboardButton(
-            text=f"{icon} @{ch}",
-            callback_data=f"adm:attack:{ch}",
-        )])
-    buttons.append([InlineKeyboardButton(
-        text=f"{'🔴' if all_on else '🟢'} Всё {'выкл' if all_on else 'вкл'}",
-        callback_data="adm:attack:all",
-    )])
-    buttons.append([InlineKeyboardButton(text="↩️ Назад", callback_data="adm:menu")])
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-
-@router.callback_query(F.data == "adm:attacks")
-async def cb_attacks_menu(cb: CallbackQuery):
-    if not await _is_admin(cb):
-        await cb.answer("Только для админов группы.", show_alert=True)
-        return
-    if not _is_allowed(cb.message.chat.id):
-        await cb.answer("Атаки настраиваются только в основной группе.", show_alert=True)
-        return
-    await cb.message.edit_text(
-        "⚔️ <b>Управление атаками:</b>\nНажми на канал чтобы вкл/выкл.",
-        parse_mode=ParseMode.HTML,
-        reply_markup=_attacks_kb(),
-    )
-    await cb.answer()
-
-
-@router.callback_query(F.data.startswith("adm:attack:"))
-async def cb_attack_toggle(cb: CallbackQuery):
-    if not await _is_admin(cb):
-        await cb.answer("Только для админов группы.", show_alert=True)
-        return
-    if not _is_allowed(cb.message.chat.id):
-        await cb.answer("Атаки настраиваются только в основной группе.", show_alert=True)
-        return
-    ch = cb.data.split(":")[-1]
-    if ch == "all":
-        new_state = not is_attack_on()
-        set_attack(new_state)
-        for c in CHANNELS:
-            set_channel_on(c, new_state)
-        status = "ВКЛ" if new_state else "ВЫКЛ"
-        await cb.answer(f"Все атаки: {status}", show_alert=True)
-    else:
-        on = not is_attack_on(ch)
-        set_channel_on(ch, on)
-        status = "ВКЛ" if on else "ВЫКЛ"
-        await cb.answer(f"@{ch}: {status}", show_alert=True)
-    await cb_attacks_menu(cb)
 
 
 # ═══════════════════════════════════════
