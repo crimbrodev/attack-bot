@@ -223,19 +223,28 @@ async def cmd_stop(message: Message):
 
 @dp.message(Command("settings"))
 async def cmd_settings(message: Message):
-    """Inline-админка (кнопки) — только для разрешённых групп и whiteliste."""
+    """Inline-админка (кнопки) — для админов группы.
+    В разрешённых группах — все настройки. В остальных — только зазывала."""
     if message.chat.type not in ("group", "supergroup"):
         await message.answer("Настройки только в группе.")
         return
-    from admin_panel import _admin_check, _main_menu_kb
-    if not _admin_check(message.from_user.id, message.chat.id):
-        await message.answer("❌ Нет доступа к настройкам.")
+    from admin_panel import _is_group_admin, _full_menu_kb, _zazyvala_menu_kb
+    # Создаём faux-callback чтобы использовать _is_group_admin
+    class _FakeCB:
+        def __init__(self, bot_inst, user_id, chat_id):
+            self.bot = bot_inst
+            self.from_user = type('obj', (object,), {'id': user_id})()
+            self.message = type('obj', (object,), {'chat': type('obj', (object,), {'id': chat_id})()})()
+    fake = _FakeCB(bot, message.from_user.id, message.chat.id)
+    if not await _is_group_admin(fake):
+        await message.answer("❌ Только для админов группы.")
         return
     title = message.chat.title or str(message.chat.id)
+    kb = _full_menu_kb() if str(message.chat.id) in ALLOWED_GROUPS else _zazyvala_menu_kb()
     await message.answer(
         f"⚙️ Настройки чата <b>{title}</b>:",
         parse_mode="HTML",
-        reply_markup=_main_menu_kb(),
+        reply_markup=kb,
     )
 
 

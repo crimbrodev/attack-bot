@@ -150,6 +150,7 @@ async def attack(pid: int, post_text: str) -> None:
 
 
 async def remind(pid: int, minutes: int) -> None:
+    from config import ALLOWED_GROUPS
     groups = load_groups()
 
     # Получаем комментарии и считаем % от взвода
@@ -166,6 +167,9 @@ async def remind(pid: int, minutes: int) -> None:
         pct_text = f"\n\n💬 Комментариев: {total}, от взвода: {squad_count} ({pct:.0f}%)"
 
     for cid, cfg in groups.items():
+        # Напоминалки только в разрешённых группах
+        if cid not in ALLOWED_GROUPS:
+            continue
         thread = cfg.get("thread")
         kwargs = {"message_thread_id": thread} if thread else {}
         try:
