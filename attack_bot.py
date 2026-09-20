@@ -651,15 +651,6 @@ async def cmd_callall(message: Message):
     parts = (message.text or "").split(maxsplit=1)
     extra = parts[1].strip() if len(parts) > 1 else "Все на атаку! 🔥"
 
-    # Список эмодзи для рандомных пингов (как ZazyvalaTag7Bot)
-    PING_EMOJIS = [
-        "🥢", "🧎🏿‍♂️", "👜", "🧚🏻‍♂️", "🐯", "👩🏽‍⚖️", "🫱🏼", "👨🏾‍🦳", "🤘🏼", "👨🏽‍⚕️",
-        "🧨", "⛄️", "😉", "🙍🏽‍♂️", "👩🏽‍🎤", "👩🏽‍🚒", "🙋🏽‍♂️", "🤩", "⛹🏻‍♂", "🚃",
-        "🏋🏻‍♀", "🦈", "🙋🏻‍♀️", "🏋‍♀", "👩🏻‍💻", "💏", "👨🏾‍✈️", "👴🏻", "🕵️‍♀️",
-        "🎉", "🔥", "💪", "⚡️", "🚀", "💣", "👀", "🎭", "🪅", "🎯",
-        "🎲", "🪩", "🧸", "🎀", "🎁", "🎄", "🎰", "🔮", "🧿", "🪬",
-    ]
-
     # 1) пытаемся через Telethon получить всех участников
     users_here = load_users().get(cid, {})
     member_count = len(users_here)
@@ -698,45 +689,36 @@ async def cmd_callall(message: Message):
         await message.answer("Все замучены. Сними мут через /unmuteuser.")
         return
 
-    # 3) собираем пинги: эмодзи + @username (или кликабельное имя)
+    # 3) собираем эмодзи-теги: каждый эмодзи = кликабельный тег юзера
     import random
     random.shuffle(active_users)
-
-    pings = []
-    for uid_key, info in active_users:
-        uname = (info.get("username") or "").strip().lstrip("@")
-        name = (info.get("name") or "боец")[:30]
-        if uname:
-            pings.append(f"@{uname}")
-        else:
-            pings.append(f'<a href="tg://user?id={uid_key}">{name}</a>')
 
     EMOJIS = ["🥢", "🧎🏿‍♂️", "👜", "🧚🏻‍♂️", "🐯", "👩🏽‍⚖️", "🫱🏼", "👨🏾‍🦳", "🤘🏼", "👨🏽‍⚕️",
               "🧨", "⛄️", "😉", "🙍🏽‍♂️", "👩🏽‍🎤", "👩🏽‍🚒", "🙋🏽‍♂️", "🤩", "⛹🏻‍♂", "🚃",
               "🏋🏻‍♀", "🦈", "🙋🏻‍♀️", "🏋‍♀", "👩🏻‍💻", "💏", "👨🏾‍✈️", "👴🏻", "🕵️‍♀️",
-              "🎉", "🔥", "💪", "⚡️", "🚀", "💣", "👀", "🎭", "🪅", "🎯"]
-    random.shuffle(EMOJIS)
+              "🎉", "🔥", "💪", "⚡️", "🚀", "💣", "👀", "🎭", "🪅", "🎯",
+              "🎲", "🪩", "🧸", "🎀", "🎁", "🎄", "🎰", "🔮", "🧿", "🪬"]
 
-    # Каждое сообщение: ссылка + текст + пинги с эмодзи
-    PINGS_PER_MSG = 5
-    n_chunks = (len(pings) + PINGS_PER_MSG - 1) // PINGS_PER_MSG
+    emoji_tags = []
+    for uid_key, info in active_users:
+        # Каждый эмодзи кликается и ведёт на профиль юзера
+        emoji = random.choice(EMOJIS)
+        emoji_tags.append(f'<a href="tg://user?id={uid_key}">{emoji}</a>')
+
+    # Каждое сообщение: заголовок + 5 эмодзи-тегов (как Zazyvala)
+    EMOJIS_PER_MSG = 5
+    n_chunks = (len(emoji_tags) + EMOJIS_PER_MSG - 1) // EMOJIS_PER_MSG
     sent = 0
     for ci in range(n_chunks):
-        batch_pings = pings[ci * PINGS_PER_MSG : (ci + 1) * PINGS_PER_MSG]
-        batch_emojis = EMOJIS[ci * PINGS_PER_MSG : (ci + 1) * PINGS_PER_MSG]
+        batch = emoji_tags[ci * EMOJIS_PER_MSG : (ci + 1) * EMOJIS_PER_MSG]
+        emojis_line = "  ".join(batch) + "\u200b"  # zero-width space для разделения ссылок
 
-        # Собираем: эмодзи + упоминание через пробел
-        pairs = [f"{e} {p}" for e, p in zip(batch_emojis, batch_pings)]
-        emojis_line = "\n".join(pairs)
-
-        if ci == 0:
-            text = f"{extra}\n\n{emojis_line}"
-        else:
-            text = emojis_line
+        # Заголовок в КАЖДОМ сообщении (как Zazyvala)
+        text = f"{extra}\n\n{emojis_line}"
 
         try:
             await bot.send_message(message.chat.id, text, parse_mode="HTML")
-            sent += len(batch_pings)
+            sent += len(batch)
             await asyncio.sleep(0.5)
         except Exception as e:
             print(f"callall chunk {ci}: {e}")

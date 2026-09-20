@@ -80,9 +80,11 @@ async def attack(pid: int, post_text: str) -> None:
                 try:
                     import random as _rnd
                     from storage import load_muted, load_users
-                    EMOJIS = ["🥢", "🧎🏿‍♂️", "👜", "🧚🏻‍♂️", "🐯", "👩🏽‍⚖️", "🫱🏼", "👨🏾‍🦳", "🤘🏼", "👨🏽‍⚕️",
+                    ALL_EMOJIS = ["🥢", "🧎🏿‍♂️", "👜", "🧚🏻‍♂️", "🐯", "👩🏽‍⚖️", "🫱🏼", "👨🏾‍🦳", "🤘🏼", "👨🏽‍⚕️",
                               "🧨", "⛄️", "😉", "🙍🏽‍♂️", "👩🏽‍🎤", "👩🏽‍🚒", "🙋🏽‍♂️", "🤩", "⛹🏻‍♂", "🚃",
-                              "🏋🏻‍♀", "🦈", "🙋🏻‍♀️", "🏋‍♀", "👩🏻‍💻", "💏", "👨🏾‍✈️", "👴🏻", "🕵️‍♀️"]
+                              "🏋🏻‍♀", "🦈", "🙋🏻‍♀️", "🏋‍♀", "👩🏻‍💻", "💏", "👨🏾‍✈️", "👴🏻", "🕵️‍♀️",
+                              "🎉", "🔥", "💪", "⚡️", "🚀", "💣", "👀", "🎭", "🪅", "🎯",
+                              "🎲", "🪩", "🧸", "🎀", "🎁", "🎄", "🎰", "🔮", "🧿", "🪬"]
                     muted_now = [int(x) for x in load_muted().get(cid, [])]
                     users_here = load_users().get(cid, {})
                     active = []
@@ -93,26 +95,20 @@ async def attack(pid: int, post_text: str) -> None:
                             uid_int = None
                         if uid_int and uid_int in muted_now:
                             continue
-                        uname = (info.get("username") or "").strip().lstrip("@")
-                        name = (info.get("name") or "боец")[:30]
-                        if uname:
-                            active.append(f"@{uname}")
-                        else:
-                            active.append(f'<a href="tg://user?id={uid}">{name}</a>')
+                        active.append((uid, info))
                     if active:
                         _rnd.shuffle(active)
-                        _rnd.shuffle(EMOJIS)
+                        # Каждый эмодзи = кликабельный тег юзера
+                        emoji_tags = []
+                        for uid, info in active:
+                            emoji = _rnd.choice(ALL_EMOJIS)
+                            emoji_tags.append(f'<a href="tg://user?id={uid}">{emoji}</a>')
                         per_msg = 5
-                        n_chunks = (len(active) + per_msg - 1) // per_msg
+                        n_chunks = (len(emoji_tags) + per_msg - 1) // per_msg
                         for ci in range(n_chunks):
-                            batch_pings = active[ci * per_msg : (ci + 1) * per_msg]
-                            batch_emojis = EMOJIS[ci * per_msg : (ci + 1) * per_msg]
-                            pairs = [f"{e} {p}" for e, p in zip(batch_emojis, batch_pings)]
-                            emojis_line = "\n".join(pairs)
-                            if ci == 0:
-                                text = f"📢 <b>СБОР! Новый пост вышел, го атаковать!</b>\n\n{emojis_line}"
-                            else:
-                                text = emojis_line
+                            batch = emoji_tags[ci * per_msg : (ci + 1) * per_msg]
+                            emojis_line = "  ".join(batch) + "\u200b"
+                            text = f"📢 СБОР! Новый пост вышел, го атаковать!\n\n{emojis_line}"
                             await tg.send_message(int(cid), text, parse_mode="HTML", **kwargs)
                             await asyncio.sleep(0.5)
                         await tg.send_message(int(cid), "Призыв окончен.", **kwargs)
