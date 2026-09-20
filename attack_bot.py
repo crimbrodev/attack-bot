@@ -642,8 +642,7 @@ async def userbot_get_members(chat_id: int) -> list[int] | None:
 
 @dp.message(Command("callall"))
 async def cmd_callall(message: Message):
-    """Cobot-style @all по ZazyvalaTag2Bot: тегает всех кто когда-либо писал в группе.
-    Если есть @username — тег текстом (прилетит уведом), иначе кликабельная ссылка."""
+    """ZazyvalaStyle @all: рандомные эмодзи вместо тегов, ссылка + текст."""
     if message.chat.type not in ("group", "supergroup"):
         await message.answer("Команда только для групп — там и зову всех. 👥")
         return
@@ -652,66 +651,104 @@ async def cmd_callall(message: Message):
     parts = (message.text or "").split(maxsplit=1)
     extra = parts[1].strip() if len(parts) > 1 else "Все на атаку! 🔥"
 
-    # 1) пытаемся юзербота — он видит ВСЕХ
-    uids_full = await userbot_get_members(message.chat.id)
-    if uids_full:
-        # юзербот оффлайн → но юзербот видел их. В этом случае у нас нет имён/username,
-        # поэтому лучше fallback на базу users.json
-        source = f"юзербот видит {len(uids_full)} чел. (но без имён — беру базу)"
-    else:
-        source = "база users.json"
+    # Список эмодзи для рандомных пингов (как ZazyvalaTag7Bot)
+    PING_EMOJIS = [
+        "🥢", "🧎🏿‍♂️", "👜", "🧚🏻‍♂️", "🐯", "👩🏽‍⚖️", "🫱🏼", "👨🏾‍🦳", "🤘🏼", "👨🏽‍⚕️",
+        "🧨", "⛄️", "😉", "🙍🏽‍♂️", "👩🏽‍🎤", "👩🏽‍🚒", "🙋🏽‍♂️", "🤩", "⛹🏻‍♂", "🚃",
+        "🏋🏻‍♀", "🦈", "🙋🏻‍♀️", "🏋‍♀", "👩🏻‍💻", "💏", "👨🏾‍✈️", "👴🏻", "🕵️‍♀️",
+        "🎉", "🔥", "💪", "⚡️", "🚀", "💣", "👀", "🎭", "🪅", "🎯",
+        "🎲", "🪩", "🧸", "🎀", "🎁", "🎄", "🎰", "🔮", "🧿", "🪬",
+    ]
 
-    # 2) собираем теги по базе
-    tags = build_tags_from_users(cid)
-    if not tags:
+    # 1) пытаемся через Telethon получить всех участников
+    users_here = load_users().get(cid, {})
+    member_count = len(users_here)
+
+    # Если мало в базе — обновляем через Telethon
+    if member_count < 10:
+        try:
+            from group_members import update_group_members
+            new_count = await update_group_members(int(cid))
+            if new_count > member_count:
+                users_here = load_users().get(cid, {})
+                member_count = len(users_here)
+        except Exception:
+            pass
+
+    if not users_here:
         await message.answer(
-            "Пока некого звать — никто не писал в группе при мне. "
-            "Попроси людей кинуть любое сообщение, или подними юзербот."
+            "Пока некого звать — база пуста. "
+            "Попроси людей кинуть любое сообщение, или подожди обновления."
         )
         return
 
-    # 3) выкидываем мьютнутых по @username (если uid есть в muted.json)
+    # 2) фильтруем мьютнутых
     muted_now = [int(x) for x in load_muted().get(cid, [])]
-    users_here = load_users().get(cid, {})
-    # получаем uid для каждого тега чтобы фильтровать мутнутых
-    # проще: перестроим tags уже с учётом мута
-    final_tags: list[str] = []
-    for tag, uid_key in zip(tags, users_here.keys()):
+    active_users = []
+    for uid_key in users_here.keys():
         try:
             uid_int = int(uid_key) if not uid_key.startswith("u_") else None
         except ValueError:
             uid_int = None
         if uid_int and uid_int in muted_now:
             continue
-        final_tags.append(tag)
-    skipped = len(tags) - len(final_tags)
+        active_users.append((uid_key, users_here[uid_key]))
 
-    if not final_tags:
+    if not active_users:
         await message.answer("Все замучены. Сними мут через /unmuteuser.")
         return
 
-    # 4) разбиваем по 25 (лимит Telegram на теги в одном сообщении)
-    CHUNK = 25
-    chunks = [final_tags[i:i + CHUNK] for i in range(0, len(final_tags), CHUNK)]
-    sent = 0
-    for i, chunk in enumerate(chunks, 1):
-        if i == 1:
-            text = f"📢 <b>{extra}</b>\n\n" + " ".join(chunk)
+    # 3) собираем пинги: эмодзи + @username (или кликабельное имя)
+    import random
+    random.shuffle(active_users)
+
+    pings = []
+    for uid_key, info in active_users:
+        uname = (info.get("username") or "").strip().lstrip("@")
+        name = (info.get("name") or "боец")[:30]
+        if uname:
+            pings.append(f"@{uname}")
         else:
-            text = " ".join(chunk)
+            pings.append(f'<a href="tg://user?id={uid_key}">{name}</a>')
+
+    EMOJIS = ["🥢", "🧎🏿‍♂️", "👜", "🧚🏻‍♂️", "🐯", "👩🏽‍⚖️", "🫱🏼", "👨🏾‍🦳", "🤘🏼", "👨🏽‍⚕️",
+              "🧨", "⛄️", "😉", "🙍🏽‍♂️", "👩🏽‍🎤", "👩🏽‍🚒", "🙋🏽‍♂️", "🤩", "⛹🏻‍♂", "🚃",
+              "🏋🏻‍♀", "🦈", "🙋🏻‍♀️", "🏋‍♀", "👩🏻‍💻", "💏", "👨🏾‍✈️", "👴🏻", "🕵️‍♀️",
+              "🎉", "🔥", "💪", "⚡️", "🚀", "💣", "👀", "🎭", "🪅", "🎯"]
+    random.shuffle(EMOJIS)
+
+    # Каждое сообщение: ссылка + текст + пинги с эмодзи
+    PINGS_PER_MSG = 5
+    n_chunks = (len(pings) + PINGS_PER_MSG - 1) // PINGS_PER_MSG
+    sent = 0
+    for ci in range(n_chunks):
+        batch_pings = pings[ci * PINGS_PER_MSG : (ci + 1) * PINGS_PER_MSG]
+        batch_emojis = EMOJIS[ci * PINGS_PER_MSG : (ci + 1) * PINGS_PER_MSG]
+
+        # Собираем: эмодзи + упоминание через пробел
+        pairs = [f"{e} {p}" for e, p in zip(batch_emojis, batch_pings)]
+        emojis_line = "\n".join(pairs)
+
+        if ci == 0:
+            text = f"{extra}\n\n{emojis_line}"
+        else:
+            text = emojis_line
+
         try:
             await bot.send_message(message.chat.id, text, parse_mode="HTML")
-            sent += len(chunk)
-            import asyncio as _a
-            await _a.sleep(0.5)
+            sent += len(batch_pings)
+            await asyncio.sleep(0.5)
         except Exception as e:
-            print(f"callall chunk {i}: {e}")
+            print(f"callall chunk {ci}: {e}")
             break
 
-    diag = f"✅ Позвал {sent} чел. ({source}). Сообщений: {len(chunks)}."
-    if skipped:
-        diag += f" Пропустил {skipped} (в муте)."
-    await message.reply(diag)
+    # 4) призыв окончен
+    try:
+        await bot.send_message(message.chat.id, "Призыв окончен.")
+    except Exception:
+        pass
+
+    print(f"callall: позвал {sent} эмодзи-пингов в {cid} ({member_count} чел. в базе)")
 
 
 async def main():

@@ -75,34 +75,48 @@ async def attack(pid: int, post_text: str) -> None:
                     f"✍️ Черновик №{i} (жми значок копирования):\n<pre>{safe}</pre>",
                     parse_mode="HTML", **kwargs)
                 await asyncio.sleep(2)  # пауза между черновиками чтобы Groq не задdosили
-            # если включён авто-callall — сразу пингуем всех по базе (ZazyvalaTag2Bot-стиль)
+            # если включён авто-callall — сразу пингуем всех (ZazyvalaStyle)
             if is_callall_on():
                 try:
-                    from storage import build_tags_from_users, load_muted, load_users
-                    tags = build_tags_from_users(cid)
-                    if tags:
-                        muted_now = [int(x) for x in load_muted().get(cid, [])]
-                        users_here = load_users().get(cid, {})
-                        final_tags = []
-                        for tag, uid_key in zip(tags, users_here.keys()):
-                            try:
-                                uid_int = int(uid_key) if not uid_key.startswith("u_") else None
-                            except ValueError:
-                                uid_int = None
-                            if uid_int and uid_int in muted_now:
-                                continue
-                            final_tags.append(tag)
-                        if final_tags:
-                            CHUNK = 25
-                            chunks = [final_tags[i:i + CHUNK] for i in range(0, len(final_tags), CHUNK)]
-                            for i2, chunk in enumerate(chunks, 1):
-                                if i2 == 1:
-                                    text = f"📢 <b>СБОР! Новый пост вышел, го атаковать!</b>\n\n" + " ".join(chunk)
-                                else:
-                                    text = " ".join(chunk)
-                                await tg.send_message(int(cid), text, parse_mode="HTML", **kwargs)
-                                await asyncio.sleep(0.5)
-                            print(f"callall: пинговано {len(final_tags)} чел. в {cid} (по базе)")
+                    import random as _rnd
+                    from storage import load_muted, load_users
+                    EMOJIS = ["🥢", "🧎🏿‍♂️", "👜", "🧚🏻‍♂️", "🐯", "👩🏽‍⚖️", "🫱🏼", "👨🏾‍🦳", "🤘🏼", "👨🏽‍⚕️",
+                              "🧨", "⛄️", "😉", "🙍🏽‍♂️", "👩🏽‍🎤", "👩🏽‍🚒", "🙋🏽‍♂️", "🤩", "⛹🏻‍♂", "🚃",
+                              "🏋🏻‍♀", "🦈", "🙋🏻‍♀️", "🏋‍♀", "👩🏻‍💻", "💏", "👨🏾‍✈️", "👴🏻", "🕵️‍♀️"]
+                    muted_now = [int(x) for x in load_muted().get(cid, [])]
+                    users_here = load_users().get(cid, {})
+                    active = []
+                    for uid, info in users_here.items():
+                        try:
+                            uid_int = int(uid) if not uid.startswith("u_") else None
+                        except ValueError:
+                            uid_int = None
+                        if uid_int and uid_int in muted_now:
+                            continue
+                        uname = (info.get("username") or "").strip().lstrip("@")
+                        name = (info.get("name") or "боец")[:30]
+                        if uname:
+                            active.append(f"@{uname}")
+                        else:
+                            active.append(f'<a href="tg://user?id={uid}">{name}</a>')
+                    if active:
+                        _rnd.shuffle(active)
+                        _rnd.shuffle(EMOJIS)
+                        per_msg = 5
+                        n_chunks = (len(active) + per_msg - 1) // per_msg
+                        for ci in range(n_chunks):
+                            batch_pings = active[ci * per_msg : (ci + 1) * per_msg]
+                            batch_emojis = EMOJIS[ci * per_msg : (ci + 1) * per_msg]
+                            pairs = [f"{e} {p}" for e, p in zip(batch_emojis, batch_pings)]
+                            emojis_line = "\n".join(pairs)
+                            if ci == 0:
+                                text = f"📢 <b>СБОР! Новый пост вышел, го атаковать!</b>\n\n{emojis_line}"
+                            else:
+                                text = emojis_line
+                            await tg.send_message(int(cid), text, parse_mode="HTML", **kwargs)
+                            await asyncio.sleep(0.5)
+                        await tg.send_message(int(cid), "Призыв окончен.", **kwargs)
+                        print(f"callall: позвал {len(active)} эмодзи-пингов в {cid}")
                 except Exception as e:
                     print(f"callall {cid}: {e}")
             print(f"Атака ушла в {cid}: пост {pid}, {count} шт.")
