@@ -16,6 +16,10 @@ STATE_DIR = Path(os.environ.get("ATTACK_STATE_DIR", str(BASE_DIR)))
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 CHANNELS = [c.strip() for c in os.environ.get("CHANNELS", "slay_awards").split(",") if c.strip()]
 
+# Разрешённые группы (через запятую в .env, или дефолтная)
+ALLOWED_GROUPS_STR = os.environ.get("ALLOWED_GROUPS", "-1004365297986")
+ALLOWED_GROUPS = [g.strip() for g in ALLOWED_GROUPS_STR.split(",") if g.strip()]
+
 # Paths
 GROUPS_FILE = STATE_DIR / "groups.json"
 USERS_FILE = STATE_DIR / "users.json"

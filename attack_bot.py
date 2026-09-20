@@ -15,7 +15,7 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandStart
 from aiogram.types import BotCommand, Message, ChatMemberUpdated
 
-from config import BOT_TOKEN, DEFAULT_COUNT, MAX_GROUP_ATTEMPTS, USERBOT_API_ID, USERBOT_API_HASH, USERBOT_SESSION, CHANNELS
+from config import BOT_TOKEN, DEFAULT_COUNT, MAX_GROUP_ATTEMPTS, USERBOT_API_ID, USERBOT_API_HASH, USERBOT_SESSION, CHANNELS, ALLOWED_GROUPS
 from storage import (
     load_groups, save_groups, load_users, remember_user,
     build_tags_from_users, load_muted, save_muted, is_muted, set_muted,
@@ -235,13 +235,9 @@ async def cmd_mute(message: Message):
 
 @dp.message(Command("muted"))
 async def cmd_muted_list(message: Message):
-    """Список тех, кто попросил не тегать (только владельцу/админу для контроля)."""
+    """Список тех, кто попросил не тегать (доступно всем — команда зазывалы)."""
     if message.chat.type not in ("group", "supergroup"):
         await message.answer("Команда для групп. 👥")
-        return
-    # простая защита: только админы чата или владелец из whitelist
-    if not base.is_allowed(message) or not base.is_allowed_group(message):
-        await message.answer(base.REFUSE_TEXT)
         return
     cid = str(message.chat.id)
     muted_ids = [int(x) for x in load_muted().get(cid, [])]

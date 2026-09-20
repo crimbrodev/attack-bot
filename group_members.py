@@ -1,14 +1,12 @@
 """Сбор участников группы через Telethon для обновления users.json."""
 import asyncio
 from telethon import TelegramClient
-from telethon.tl.functions.channels import GetParticipantsRequest
-from telethon.tl.types import ChannelParticipantsSearch
 from config import USERBOT_API_ID, USERBOT_API_HASH, USERBOT_SESSION
 from storage import load_users, save_users
 
 
 async def fetch_group_members(group_id: int) -> dict:
-    """Получает всех участников группы через Telethon.
+    """Получает всех участников группы через Telethon (aggressive=True для полного списка).
 
     Returns: {user_id: {"name": "...", "username": "..."}}
     """
@@ -26,24 +24,15 @@ async def fetch_group_members(group_id: int) -> dict:
         entity = await client.get_entity(group_id)
 
         members = {}
-        offset = 0
-        limit = 100
-        while True:
-            result = await client(GetParticipantsRequest(
-                entity, ChannelParticipantsSearch(''), offset, limit, 0
-            ))
-            if not result.users:
-                break
-            for user in result.users:
-                name = (user.first_name or '') + ' ' + (user.last_name or '')
-                name = name.strip() or str(user.id)
-                members[str(user.id)] = {
-                    "name": name[:60],
-                    "username": (user.username or '').strip(),
-                }
-            offset += len(result.users)
-            if len(result.users) < limit:
-                break
+        async for user in client.iter_participants(entity, aggressive=True):
+            if user.bot:
+                continue
+            name = (user.first_name or '') + ' ' + (user.last_name or '')
+            name = name.strip() or str(user.id)
+            members[str(user.id)] = {
+                "name": name[:60],
+                "username": (user.username or '').strip(),
+            }
 
         return members
 
