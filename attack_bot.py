@@ -15,6 +15,8 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandStart
 from aiogram.types import BotCommand, Message, ChatMemberUpdated
 
+import base
+
 from config import BOT_TOKEN, DEFAULT_COUNT, MAX_GROUP_ATTEMPTS, USERBOT_API_ID, USERBOT_API_HASH, USERBOT_SESSION, CHANNELS, ALLOWED_GROUPS
 from storage import (
     load_groups, save_groups, load_users, remember_user,
@@ -26,6 +28,8 @@ from storage import (
     load_last, get_general_chat, set_general_chat,
     is_warnings_on, set_warnings,
 )
+
+from admin_panel import router as admin_router
 
 def setup_logging(name: str = "bot") -> None:
     """Настройка логирования с ротацией файлов."""
@@ -41,6 +45,7 @@ def setup_logging(name: str = "bot") -> None:
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
+dp.include_router(admin_router)  # админка (inline-кнопки)
 
 
 @dp.my_chat_member()
@@ -214,6 +219,24 @@ async def cmd_stop(message: Message):
         del g[cid]
         save_groups(g)
     await message.answer("Отписал, атак больше не будет. Возвращайся через /start. 🤝")
+
+
+@dp.message(Command("settings"))
+async def cmd_settings(message: Message):
+    """Inline-админка (кнопки) — только для разрешённых групп и whiteliste."""
+    if message.chat.type not in ("group", "supergroup"):
+        await message.answer("Настройки только в группе.")
+        return
+    from admin_panel import _admin_check, _main_menu_kb
+    if not _admin_check(message.from_user.id, message.chat.id):
+        await message.answer("❌ Нет доступа к настройкам.")
+        return
+    title = message.chat.title or str(message.chat.id)
+    await message.answer(
+        f"⚙️ Настройки чата <b>{title}</b>:",
+        parse_mode="HTML",
+        reply_markup=_main_menu_kb(),
+    )
 
 
 @dp.message(Command("mute"))
@@ -752,6 +775,7 @@ async def main():
             BotCommand(command="muteuser", description="Мод: замутить юзера"),
             BotCommand(command="unmuteuser", description="Мод: снять мут"),
             BotCommand(command="status", description="Что на прицеле"),
+            BotCommand(command="settings", description="Настройки (inline)"),
             BotCommand(command="stop", description="Отписаться"),
         ])
     except Exception as err:
