@@ -9,43 +9,193 @@ import random
 import re
 import sys
 
-import base
+sys.path.insert(0, "/root/kazahstanos/projects/slay4242bot")
+import bot as base  # общий Groq-ключ, модели, whitelist своих
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandStart
 from aiogram.types import BotCommand, Message, ChatMemberUpdated
 
-import base
+TOKEN = "BOT_TOKEN_REMOVED"
+STATE_DIR = "/root/kazahstanos/projects/attack3v1r1b42pbot"
+GROUPS_FILE = f"{STATE_DIR}/groups.json"
+LAST_FILE = f"{STATE_DIR}/last.json"
+USERS_FILE = f"{STATE_DIR}/users.json"
+ATTACK_FILE = f"{STATE_DIR}/attack.txt"
+DEFAULT_COUNT = 5
 
-from config import BOT_TOKEN, DEFAULT_COUNT, MAX_GROUP_ATTEMPTS, USERBOT_API_ID, USERBOT_API_HASH, USERBOT_SESSION, CHANNELS, ALLOWED_GROUPS
-from storage import (
-    load_groups, save_groups, load_users, remember_user,
-    build_tags_from_users, load_muted, save_muted, is_muted, set_muted,
-    is_attack_on, set_attack, set_channel_on,
-    is_callall_on, set_callall,
-    get_remind_minutes, set_remind_minutes,
-    increment_group_errors, reset_group_errors, remove_group,
-    load_last, get_general_chat, set_general_chat,
-    is_warnings_on, set_warnings,
-)
-
-from admin_panel import router as admin_router
-
-def setup_logging(name: str = "bot") -> None:
-    """Настройка логирования с ротацией файлов."""
-    from logging.handlers import RotatingFileHandler
-    from config import STATE_DIR, LOG_MAX_BYTES, LOG_BACKUP_COUNT
-    log_file = STATE_DIR / f"{name}.log"
-    handler = RotatingFileHandler(
-        log_file, maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT, encoding="utf-8"
-    )
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-    logging.basicConfig(level=logging.INFO, handlers=[handler, logging.StreamHandler()])
-
-
-bot = Bot(token=BOT_TOKEN)
+bot = Bot(token=TOKEN)
 dp = Dispatcher()
-dp.include_router(admin_router)  # админка (inline-кнопки)
+
+
+def load_groups() -> dict:
+    try:
+        with open(GROUPS_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, ValueError):
+        return {}
+
+
+def save_groups(g: dict) -> None:
+    with open(GROUPS_FILE, "w", encoding="utf-8") as f:
+        json.dump(g, f, ensure_ascii=False)
+
+
+def load_users() -> dict:
+    """{chat_id_str: {uid_str: {name, username}}} — все кто писал в группе.
+    ZazyvalaTag2Bot-стиль: тегаем всех по @username или tg://user?id=..."""
+    try:
+        with open(USERS_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, ValueError):
+        return {}
+
+
+def save_users(u: dict) -> None:
+    try:
+        with open(USERS_FILE, "w", encoding="utf-8") as f:
+            json.dump(u, f, ensure_ascii=False)
+    except Exception as err:
+        print(f"users-save: {err}")
+
+
+def remember_user(chat_id: int, user) -> None:
+    """Запоминаем всех, кто писал в группе — потом тегаем в callall."""
+    try:
+        if not user or getattr(user, "is_bot", False):
+            return
+        u = load_users()
+        cid = str(chat_id)
+        grp = u.setdefault(cid, {})
+        name = (user.full_name or user.username or str(user.id))[:60]
+        grp[str(user.id)] = {"name": name, "username": (getattr(user, "username", "") or "").strip()}
+        save_users(u)
+    except Exception as err:
+        print(f"remember: {err}")
+
+
+def build_tags_from_users(cid: str) -> list[str]:
+    """Собирает теги по ZazyvalaTag2Bot-стилю:
+    если есть @username — тег текстом (прилетит уведом), иначе кликабельная ссылка с именем."""
+    tags: list[str] = []
+    users_here = load_users().get(cid, {})
+    for uid, info in users_here.items():
+        uname = (info.get("username") or "").strip()
+        if uid.startswith("u_"):
+            if uname:
+                tags.append("@" + uname.lstrip("@"))
+            continue
+        if uname:
+            tags.append("@" + uname.lstrip("@"))
+        else:
+            name = htmlmod.escape((info.get("name") or "боец")[:40], quote=False)
+            tags.append(f'<a href="tg://user?id={uid}">{name}</a>')
+    return tags
+
+
+def is_attack_on() -> bool:
+    """Атаки ВКЛ/ВЫКЛ. По умолчанию ВКЛ."""
+    try:
+        with open(ATTACK_FILE, encoding="utf-8") as f:
+            return f.read().strip() != "off"
+    except FileNotFoundError:
+        return True
+
+
+def set_attack(on: bool) -> None:
+    with open(ATTACK_FILE, "w", encoding="utf-8") as f:
+        f.write("on" if on else "off")
+    print(f"Атаки: {'ВКЛ' if on else 'ВЫКЛ'}")
+
+
+def is_channel_on(channel: str) -> bool:
+    """Проверяет, включён ли конкретный канал. По умолчанию ВКЛ."""
+    try:
+        with open(f"{STATE_DIR}/{channel}.txt", encoding="utf-8") as f:
+            return f.read().strip() != "off"
+    except FileNotFoundError:
+        return True
+
+
+def set_channel_on(channel: str, on: bool) -> None:
+    """Включает или выключает конкретный канал."""
+    with open(f"{STATE_DIR}/{channel}.txt", "w", encoding="utf-8") as f:
+        f.write("on" if on else "off")
+    print(f"Канал {channel}: {'ВКЛ' if on else 'ВЫКЛ'}")
+
+
+REMIND_FILE = f"{STATE_DIR}/remind.txt"
+DEFAULT_REMIND_MIN = 5
+USERBOT_API_ID = 0
+USERBOT_API_HASH_FILE = "/root/kazahstanos/projects/slay_userbot/.api_hash"
+USERBOT_SESSION_DIR = "/root/kazahstanos/projects/slay_userbot"
+
+
+def get_remind_minutes() -> int:
+    try:
+        with open(REMIND_FILE, encoding="utf-8") as f:
+            raw = f.read().strip()
+        val = int(raw)
+        return val if val > 0 else DEFAULT_REMIND_MIN
+    except (FileNotFoundError, ValueError):
+        return DEFAULT_REMIND_MIN
+
+
+def set_remind_minutes(minutes: int) -> None:
+    with open(REMIND_FILE, "w", encoding="utf-8") as f:
+        f.write(str(minutes))
+    print(f"Интервал напоминалок: {minutes} мин")
+
+
+def last_info() -> dict:
+    try:
+        with open(LAST_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, ValueError):
+        return {}
+
+
+MUTED_FILE = f"{STATE_DIR}/muted.json"
+
+
+def load_muted() -> dict:
+    """{chat_id_str: [user_id, ...]} — кто попросил не тегать."""
+    try:
+        with open(MUTED_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, ValueError):
+        return {}
+
+
+def save_muted(d: dict) -> None:
+    with open(MUTED_FILE, "w", encoding="utf-8") as f:
+        json.dump(d, f, ensure_ascii=False)
+
+
+def is_muted(chat_id: int | str, user_id: int) -> bool:
+    m = load_muted().get(str(chat_id), [])
+    return int(user_id) in [int(x) for x in m]
+
+
+def set_muted(chat_id: int | str, user_id: int, on: bool) -> bool:
+    """Поменять состояние мута. Возвращает итог: True если муть включён."""
+    m = load_muted()
+    cid = str(chat_id)
+    arr = [int(x) for x in m.get(cid, [])]
+    uid = int(user_id)
+    if on:
+        if uid not in arr:
+            arr.append(uid)
+        result = True
+    else:
+        arr = [x for x in arr if x != uid]
+        result = False
+    if arr:
+        m[cid] = arr
+    else:
+        m.pop(cid, None)
+    save_muted(m)
+    return result
 
 
 @dp.my_chat_member()
@@ -93,12 +243,7 @@ async def on_added(event: ChatMemberUpdated):
             "/stop — отписаться.",
             parse_mode="HTML",
         )
-        reset_group_errors(cid)
     except Exception as err:
-        if "Not Found" in str(err):
-            errors = increment_group_errors(cid)
-            if errors >= MAX_GROUP_ATTEMPTS:
-                remove_group(cid)
         print(f"Привет в {cid} не ушёл: {err}")
 
 
@@ -107,7 +252,7 @@ def _watched_channels() -> list[str]:
     Достаём через psutil если есть, иначе перебираем known."""
     chans = ["slay_awards"]
     try:
-        import subprocess
+        import os, subprocess
         out = subprocess.check_output(
             ["pgrep", "-af", "attack_watch.py"], text=True, timeout=5,
         )
@@ -127,7 +272,7 @@ def _watched_channels() -> list[str]:
 async def cmd_start(message: Message):
     # личка — как первый бот: подписка на черновики + помощь
     if message.chat.type == "private":
-        if not base.is_allowed(message) or not base.is_allowed_group(message):
+        if not base.is_allowed(message):
             await message.answer(base.REFUSE_TEXT)
             return
         base.save_sub(message.chat.id)
@@ -141,13 +286,9 @@ async def cmd_start(message: Message):
             "• /status — что на прицеле. /stop — отписаться."
         )
         return
-    # группа — регистрация на атаку (только если уже зарегистрирована или главная группа)
+    # группа — регистрация на атаку
     g = load_groups()
     cid = str(message.chat.id)
-    ALLOWED_MAIN_GROUP = "-1004365297986"
-    if cid not in g and cid != ALLOWED_MAIN_GROUP:
-        await message.answer("❌ Этот бот не для этой группы.")
-        return
     if cid not in g:
         g[cid] = {"count": DEFAULT_COUNT, "title": message.chat.title or message.chat.first_name or cid}
         save_groups(g)
@@ -157,7 +298,7 @@ async def cmd_start(message: Message):
         "Как работаю:\n"
         "• Палю новые посты в @slay_awards.\n"
         f"• На новый пост кидаю сюда черновики (сейчас по {g[cid]['count']} шт) — разбирайте в комменты.\n"
-        f"• Каждые {get_remind_minutes(cid)} мин напоминаю: пора атаковать — пока не выйдет новый пост. Интервал меняется через /remind N.\n\n"
+        f"• Каждые {get_remind_minutes()} мин напоминаю: пора атаковать — пока не выйдет новый пост. Интервал меняется через /remind N.\n\n"
         "Команды:\n"
         "/setcount N — сколько черновиков кидать (1–20, только свои).\n"
         "/remind N — интервал напоминалок в минутах (1–1440).\n"
@@ -168,7 +309,7 @@ async def cmd_start(message: Message):
 
 @dp.message(Command("setcount"))
 async def cmd_setcount(message: Message):
-    if not base.is_allowed(message) or not base.is_allowed_group(message):
+    if not base.is_allowed(message):
         await message.answer(base.REFUSE_TEXT)
         return
     parts = (message.text or "").split()
@@ -189,16 +330,22 @@ async def cmd_status(message: Message):
     g = load_groups()
     cid = str(message.chat.id)
     count = g.get(cid, {}).get("count", DEFAULT_COUNT)
-    remind_min = get_remind_minutes(cid)
+    remind_min = get_remind_minutes()
     import time
+    channels = ["slay_awards", "streaminside", "BotovodX"]
     lines = []
-    for ch in CHANNELS:
-        info = load_last(ch)
+    for ch in channels:
+        fn = f"{STATE_DIR}/last_{ch}.json" if ch != "slay_awards" else f"{STATE_DIR}/last.json"
+        try:
+            with open(fn, encoding="utf-8") as f:
+                info = json.load(f)
+        except (FileNotFoundError, ValueError):
+            info = {}
         if not info.get("post_id"):
             lines.append(f"• @{ch}: постов пока не было.")
             continue
         ago = int((time.time() - info.get("post_time", time.time())) // 60)
-        state = "🔥" if is_attack_on(ch) else "🔴"
+        state = "🔥" if is_channel_on(ch) else "🔴"
         lines.append(
             f"{state} @{ch}: https://t.me/{ch}/{info.get('post_id')} "
             f"({ago} мин назад, напоминалок: {info.get('reminders', 0)})")
@@ -207,7 +354,7 @@ async def cmd_status(message: Message):
         f"Черновиков на пост: {count}.\n"
         f"Напоминалка каждые: {remind_min} мин (/remind N — поменять).\n"
         f"Атаки: {'🔥 ВКЛ' if is_attack_on() else '🔴 ВЫКЛ'}.\n"
-        f"Авто-тег всех: {'📢 ВКЛ' if is_callall_on(cid) else '🔕 ВЫКЛ'} (/autocall)."
+        f"Авто-тег всех: {'📢 ВКЛ' if is_callall_on() else '🔕 ВЫКЛ'} (/autocall)."
     )
 
 
@@ -221,33 +368,6 @@ async def cmd_stop(message: Message):
     await message.answer("Отписал, атак больше не будет. Возвращайся через /start. 🤝")
 
 
-@dp.message(Command("settings"))
-async def cmd_settings(message: Message):
-    """Inline-админка (кнопки) — для админов группы.
-    В разрешённых группах — все настройки. В остальных — только зазывала."""
-    if message.chat.type not in ("group", "supergroup"):
-        await message.answer("Настройки только в группе.")
-        return
-    from admin_panel import _is_admin, _full_menu_kb, _zazyvala_menu_kb
-    # Создаём faux-callback чтобы использовать _is_admin
-    class _FakeCB:
-        def __init__(self, bot_inst, user_id, chat_id):
-            self.bot = bot_inst
-            self.from_user = type('obj', (object,), {'id': user_id})()
-            self.message = type('obj', (object,), {'chat': type('obj', (object,), {'id': chat_id})()})()
-    fake = _FakeCB(bot, message.from_user.id, message.chat.id)
-    if not await _is_admin(fake):
-        await message.answer("❌ Только для админов группы.")
-        return
-    title = message.chat.title or str(message.chat.id)
-    kb = _full_menu_kb() if str(message.chat.id) in ALLOWED_GROUPS else _zazyvala_menu_kb()
-    await message.answer(
-        f"⚙️ Настройки чата <b>{title}</b>:",
-        parse_mode="HTML",
-        reply_markup=kb,
-    )
-
-
 @dp.message(Command("mute"))
 async def cmd_mute(message: Message):
     """Выйти из призыва: /mute. Тебя больше не будут тегать @all и в авто-callall."""
@@ -256,18 +376,6 @@ async def cmd_mute(message: Message):
         return
     if not message.from_user:
         return
-    cid = str(message.chat.id)
-    # Проверка: кто может мутить себя
-    from storage import get_call_setting
-    who = get_call_setting(cid, "who_can_mute")
-    if who == "admins":
-        try:
-            member = await bot.get_chat_member(message.chat.id, message.from_user.id)
-            if member.status not in ("administrator", "creator"):
-                await message.answer("❌ Только админы могут использовать /mute.")
-                return
-        except Exception:
-            pass
     uid = message.from_user.id
     now_muted = set_muted(message.chat.id, uid, True)
     if now_muted:
@@ -279,9 +387,13 @@ async def cmd_mute(message: Message):
 
 @dp.message(Command("muted"))
 async def cmd_muted_list(message: Message):
-    """Список тех, кто попросил не тегать (доступно всем — команда зазывалы)."""
+    """Список тех, кто попросил не тегать (только владельцу/админу для контроля)."""
     if message.chat.type not in ("group", "supergroup"):
         await message.answer("Команда для групп. 👥")
+        return
+    # простая защита: только админы чата или владелец из whitelist
+    if not base.is_allowed(message):
+        await message.answer(base.REFUSE_TEXT)
         return
     cid = str(message.chat.id)
     muted_ids = [int(x) for x in load_muted().get(cid, [])]
@@ -325,8 +437,20 @@ async def cmd_unmute(message: Message):
 
 @dp.message(Command("call"))
 async def cmd_call_short(message: Message):
-    """Короткий алиас /callall — зовёт всех (ZazyvalaStyle). Работает в любой группе."""
-    await cmd_callall(message)
+    """Короткий алиас /autocall: /call on|off — рубильник авто-зазывалки при атаке."""
+    if not base.is_allowed(message):
+        await message.answer(base.REFUSE_TEXT)
+        return
+    parts = (message.text or "").split()
+    if len(parts) >= 2 and parts[1].lower() in ("on", "off", "вкл", "выкл", "1", "0"):
+        on = parts[1].lower() in ("on", "вкл", "1")
+        set_callall(on)
+    else:
+        on = not is_callall_on()
+        set_callall(on)
+    await message.answer(
+        "📢 Зазывалка ВКЛ — на новый пост сразу сбор всех." if on
+        else "🔕 Зазывалка ВЫКЛ — только ручной /callall. Включить: /call on")
 
 
 async def _resolve_target_user(message: Message) -> tuple[int, str] | None:
@@ -358,7 +482,7 @@ async def cmd_muteuser(message: Message):
     if message.chat.type not in ("group", "supergroup"):
         await message.answer("Команда для групп. 👥")
         return
-    if not base.is_allowed(message) or not base.is_allowed_group(message):
+    if not base.is_allowed(message):
         await message.answer(base.REFUSE_TEXT)
         return
     target = await _resolve_target_user(message)
@@ -377,7 +501,7 @@ async def cmd_unmuteuser(message: Message):
     if message.chat.type not in ("group", "supergroup"):
         await message.answer("Команда для групп. 👥")
         return
-    if not base.is_allowed(message) or not base.is_allowed_group(message):
+    if not base.is_allowed(message):
         await message.answer(base.REFUSE_TEXT)
         return
     target = await _resolve_target_user(message)
@@ -396,7 +520,7 @@ async def handle_text(message: Message):
     Регексп '^(?!/)' отсекает команды — /remind и прочие уйдут в свои хендлеры."""
     if message.chat.type != "private":
         return
-    if not base.is_allowed(message) or not base.is_allowed_group(message):
+    if not base.is_allowed(message):
         await message.reply(base.REFUSE_TEXT)
         return
     post_text = message.text or message.caption
@@ -457,7 +581,7 @@ async def cmd_slayattack(message: Message):
         on = parts[1].lower() in ("on", "вкл", "1")
         set_channel_on(channel, on)
     else:
-        on = not is_attack_on(channel)
+        on = not is_channel_on(channel)
         set_channel_on(channel, on)
     await message.answer(
         f"🔥 Атаки от @slay_awards ВКЛЮЧЕНЫ — бью по новым постам." if on
@@ -473,7 +597,7 @@ async def cmd_siattack(message: Message):
         on = parts[1].lower() in ("on", "вкл", "1")
         set_channel_on(channel, on)
     else:
-        on = not is_attack_on(channel)
+        on = not is_channel_on(channel)
         set_channel_on(channel, on)
     await message.answer(
         f"🔥 Атаки от @streaminside ВКЛЮЧЕНЫ — бью по новым постам." if on
@@ -489,7 +613,7 @@ async def cmd_botovattack(message: Message):
         on = parts[1].lower() in ("on", "вкл", "1")
         set_channel_on(channel, on)
     else:
-        on = not is_attack_on(channel)
+        on = not is_channel_on(channel)
         set_channel_on(channel, on)
     await message.answer(
         f"🔥 Атаки от @BotovodX ВКЛЮЧЕНЫ — бью по новым постам." if on
@@ -504,13 +628,15 @@ async def cmd_attackmode(message: Message):
         on = parts[1].lower() in ("on", "вкл", "1")
         set_attack(on)
         # также включаем/выключаем все каналы
-        for ch in CHANNELS:
-            set_channel_on(ch, on)
+        set_channel_on("slay_awards", on)
+        set_channel_on("streaminside", on)
+        set_channel_on("BotovodX", on)
     else:
         on = not is_attack_on()
         set_attack(on)
-        for ch in CHANNELS:
-            set_channel_on(ch, on)
+        set_channel_on("slay_awards", on)
+        set_channel_on("streaminside", on)
+        set_channel_on("BotovodX", on)
     await message.answer(
         "🔥 Общий режим атак ВКЛЮЧЕН — бью по всем новым постам." if on
         else "🔴 Общий режим атак ВЫКЛЮЧЕН — молчу, только слежу.")
@@ -519,14 +645,13 @@ async def cmd_attackmode(message: Message):
 @dp.message(Command("remind"))
 async def cmd_remind(message: Message):
     """Интервал напоминалок в минутах: /remind, /remind N (1-1440)."""
-    if not base.is_allowed(message) or not base.is_allowed_group(message):
+    if not base.is_allowed(message):
         await message.answer(base.REFUSE_TEXT)
         return
-    cid = str(message.chat.id)
     parts = (message.text or "").split()
     if len(parts) < 2:
         await message.answer(
-            f"Сейчас напоминаю каждые {get_remind_minutes(cid)} мин. "
+            f"Сейчас напоминаю каждые {get_remind_minutes()} мин. "
             "Поменять: /remind N (от 1 до 1440 мин). 0 — вырубить напоминалки.")
         return
     if not parts[1].isdigit():
@@ -537,63 +662,46 @@ async def cmd_remind(message: Message):
         await message.answer("Давай от 0 до 1440 (это сутки). /remind 10")
         return
     if n == 0:
-        set_remind_minutes(cid, 1)
+        # удаляем файл = дефолт (5 мин). Чтобы реально вырубить, пишем 999999 или юзаем /attack off
+        set_remind_minutes(1)  # минимум = 1 мин, по сути прижато к полу
         await message.answer("Напоминалки прижаты к минимуму (1 мин). Чтобы вырубить совсем — /attack off.")
         return
-    set_remind_minutes(cid, n)
+    set_remind_minutes(n)
     await message.answer(f"✅ Принято, напоминаю каждые {n} мин. Следилка подхватит на следующем цикле (≤60 сек).")
 
 
-@dp.message(Command("setgeneral"))
-async def cmd_setgeneral(message: Message):
-    """Установить чат для предупреждений: /setgeneral (текущий чат), /setgeneral ID."""
-    if not base.is_allowed(message) or not base.is_allowed_group(message):
-        await message.answer(base.REFUSE_TEXT)
-        return
-    cid = str(message.chat.id)
-    parts = (message.text or "").split()
-    if len(parts) < 2:
-        set_general_chat(cid, cid)
-        await message.answer(f"✅ Чат для предупреждений: {cid} ({message.chat.title or 'этот чат'})")
-        return
-    chat_id = parts[1]
-    set_general_chat(cid, chat_id)
-    await message.answer(f"✅ Чат для предупреждений: {chat_id}")
+CALLALL_FILE = f"{STATE_DIR}/callall.txt"
 
 
-@dp.message(Command("warnings"))
-async def cmd_warnings(message: Message):
-    """Рубильник предупреждений о % взвода: /warnings, /warnings on, /warnings off."""
-    if not base.is_allowed(message) or not base.is_allowed_group(message):
-        await message.answer(base.REFUSE_TEXT)
-        return
-    cid = str(message.chat.id)
-    parts = (message.text or "").split()
-    if len(parts) >= 2 and parts[1].lower() in ("on", "off", "вкл", "выкл", "1", "0"):
-        on = parts[1].lower() in ("on", "вкл", "1")
-        set_warnings(cid, on)
-    else:
-        on = not is_warnings_on(cid)
-        set_warnings(cid, on)
-    status = "включены ✅" if on else "выключены ❌"
-    await message.answer(f"Предупреждения о % взвода: {status}")
+def is_callall_on() -> bool:
+    """Авто-тег всех при новой атаке. По дефолту ВЫКЛ."""
+    try:
+        with open(CALLALL_FILE, encoding="utf-8") as f:
+            return f.read().strip().lower() == "on"
+    except FileNotFoundError:
+        return False
+
+
+def set_callall(on: bool) -> None:
+    with open(CALLALL_FILE, "w", encoding="utf-8") as f:
+        f.write("on" if on else "off")
+    print(f"Авто-callall при атаке: {'ВКЛ' if on else 'ВЫКЛ'}")
 
 
 @dp.message(Command("autocall"))
 async def cmd_autocall(message: Message):
     """Рубильник авто-тега всех при новой атаке: /autocall, /autocall on, /autocall off.
     ВКЛ = на КАЖДЫЙ новый пост в @slay_awards бот сразу пингует ВСЕХ участников группы."""
-    if not base.is_allowed(message) or not base.is_allowed_group(message):
+    if not base.is_allowed(message):
         await message.answer(base.REFUSE_TEXT)
         return
-    cid = str(message.chat.id)
     parts = (message.text or "").split()
     if len(parts) >= 2 and parts[1].lower() in ("on", "off", "вкл", "выкл", "1", "0"):
         on = parts[1].lower() in ("on", "вкл", "1")
-        set_callall(cid, on)
+        set_callall(on)
     else:
-        on = not is_callall_on(cid)
-        set_callall(cid, on)
+        on = not is_callall_on()
+        set_callall(on)
     await message.answer(
         "📢 Авто-тег ВСЕХ при атаке ВКЛЮЧЁН — на новый пост сразу сбор всех." if on
         else "🔕 Авто-тег ВЫКЛЮЧЁН — только ручной /callall. Используй /autocall когда надо.")
@@ -627,14 +735,26 @@ async def cmd_setthread(message: Message):
 async def userbot_get_members(chat_id: int) -> list[int] | None:
     """Достаём ВСЕХ участников группы через юзербот (Telethon). None = юзербот не настроен."""
     try:
+        import os
+        # импортируем telethon из venv юзербота
+        import sys
+        sys.path.insert(0, "/root/kazahstanos/projects/slay_userbot/venv/lib/python3.11/site-packages")
         from telethon import TelegramClient
         from telethon.tl.functions.channels import GetParticipantsRequest
         from telethon.tl.types import ChannelParticipantsSearch
-        if not USERBOT_API_HASH:
+        if not os.path.exists(USERBOT_API_HASH_FILE):
             return None
-        if not USERBOT_SESSION:
+        # ищем любую .session в папке юзербота
+        sess = None
+        for fn in os.listdir(USERBOT_SESSION_DIR):
+            if fn.endswith(".session"):
+                sess = os.path.join(USERBOT_SESSION_DIR, fn[:-len(".session")])
+                break
+        if not sess:
             return None
-        client = TelegramClient(USERBOT_SESSION, USERBOT_API_ID, USERBOT_API_HASH)
+        with open(USERBOT_API_HASH_FILE) as f:
+            api_hash = f.read().strip()
+        client = TelegramClient(sess, USERBOT_API_ID, api_hash)
         await client.connect()
         if not await client.is_user_authorized():
             await client.disconnect()
@@ -671,7 +791,8 @@ async def userbot_get_members(chat_id: int) -> list[int] | None:
 
 @dp.message(Command("callall"))
 async def cmd_callall(message: Message):
-    """ZazyvalaStyle @all: рандомные эмодзи вместо тегов, ссылка + текст."""
+    """Cobot-style @all по ZazyvalaTag2Bot: тегает всех кто когда-либо писал в группе.
+    Если есть @username — тег текстом (прилетит уведом), иначе кликабельная ссылка."""
     if message.chat.type not in ("group", "supergroup"):
         await message.answer("Команда только для групп — там и зову всех. 👥")
         return
@@ -680,104 +801,73 @@ async def cmd_callall(message: Message):
     parts = (message.text or "").split(maxsplit=1)
     extra = parts[1].strip() if len(parts) > 1 else "Все на атаку! 🔥"
 
-    # Проверка: кто может делать /callall
-    from storage import get_call_setting
-    who = get_call_setting(cid, "who_can_call")
-    if who == "admins":
-        try:
-            member = await bot.get_chat_member(message.chat.id, message.from_user.id)
-            if member.status not in ("administrator", "creator"):
-                await message.answer("❌ Только админы могут делать /callall.")
-                return
-        except Exception:
-            pass
+    # 1) пытаемся юзербота — он видит ВСЕХ
+    uids_full = await userbot_get_members(message.chat.id)
+    if uids_full:
+        # юзербот оффлайн → но юзербот видел их. В этом случае у нас нет имён/username,
+        # поэтому лучше fallback на базу users.json
+        source = f"юзербот видит {len(uids_full)} чел. (но без имён — беру базу)"
+    else:
+        source = "база users.json"
 
-    # Настройки зазывалы
-    EMOJIS_PER_MSG = get_call_setting(cid, "mentions_per_msg")
-    MSG_DELAY = get_call_setting(cid, "msg_delay")
-
-    # 1) пытаемся через Telethon получить всех участников
-    users_here = load_users().get(cid, {})
-    member_count = len(users_here)
-
-    # Если мало в базе — обновляем через Telethon
-    if member_count < 10:
-        try:
-            from group_members import update_group_members
-            new_count = await update_group_members(int(cid))
-            if new_count > member_count:
-                users_here = load_users().get(cid, {})
-                member_count = len(users_here)
-        except Exception:
-            pass
-
-    if not users_here:
+    # 2) собираем теги по базе
+    tags = build_tags_from_users(cid)
+    if not tags:
         await message.answer(
-            "Пока некого звать — база пуста. "
-            "Попроси людей кинуть любое сообщение, или подожди обновления."
+            "Пока некого звать — никто не писал в группе при мне. "
+            "Попроси людей кинуть любое сообщение, или подними юзербот."
         )
         return
 
-    # 2) фильтруем мьютнутых
+    # 3) выкидываем мьютнутых по @username (если uid есть в muted.json)
     muted_now = [int(x) for x in load_muted().get(cid, [])]
-    active_users = []
-    for uid_key in users_here.keys():
+    users_here = load_users().get(cid, {})
+    # получаем uid для каждого тега чтобы фильтровать мутнутых
+    # проще: перестроим tags уже с учётом мута
+    final_tags: list[str] = []
+    for tag, uid_key in zip(tags, users_here.keys()):
         try:
             uid_int = int(uid_key) if not uid_key.startswith("u_") else None
         except ValueError:
             uid_int = None
         if uid_int and uid_int in muted_now:
             continue
-        active_users.append((uid_key, users_here[uid_key]))
+        final_tags.append(tag)
+    skipped = len(tags) - len(final_tags)
 
-    if not active_users:
+    if not final_tags:
         await message.answer("Все замучены. Сними мут через /unmuteuser.")
         return
 
-    # 3) собираем эмодзи-теги: каждый эмодзи = кликабельный тег юзера
-    import random
-    random.shuffle(active_users)
-
-    EMOJIS = ["🥢", "🧎🏿‍♂️", "👜", "🧚🏻‍♂️", "🐯", "👩🏽‍⚖️", "🫱🏼", "👨🏾‍🦳", "🤘🏼", "👨🏽‍⚕️",
-              "🧨", "⛄️", "😉", "🙍🏽‍♂️", "👩🏽‍🎤", "👩🏽‍🚒", "🙋🏽‍♂️", "🤩", "⛹🏻‍♂", "🚃",
-              "🏋🏻‍♀", "🦈", "🙋🏻‍♀️", "🏋‍♀", "👩🏻‍💻", "💏", "👨🏾‍✈️", "👴🏻", "🕵️‍♀️",
-              "🎉", "🔥", "💪", "⚡️", "🚀", "💣", "👀", "🎭", "🪅", "🎯",
-              "🎲", "🪩", "🧸", "🎀", "🎁", "🎄", "🎰", "🔮", "🧿", "🪬"]
-
-    emoji_tags = []
-    for uid_key, info in active_users:
-        # Каждый эмодзи кликается и ведёт на профиль юзера
-        emoji = random.choice(EMOJIS)
-        emoji_tags.append(f'<a href="tg://user?id={uid_key}">{emoji}</a>')
-
-    # Каждое сообщение: заголовок + N эмодзи-тегов (из настроек)
-    n_chunks = (len(emoji_tags) + EMOJIS_PER_MSG - 1) // EMOJIS_PER_MSG
+    # 4) разбиваем по 25 (лимит Telegram на теги в одном сообщении)
+    CHUNK = 25
+    chunks = [final_tags[i:i + CHUNK] for i in range(0, len(final_tags), CHUNK)]
     sent = 0
-    for ci in range(n_chunks):
-        batch = emoji_tags[ci * EMOJIS_PER_MSG : (ci + 1) * EMOJIS_PER_MSG]
-        emojis_line = "  ".join(batch) + "\u200b"
-
-        text = f"{extra}\n\n{emojis_line}"
-
+    for i, chunk in enumerate(chunks, 1):
+        if i == 1:
+            text = f"📢 <b>{extra}</b>\n\n" + " ".join(chunk)
+        else:
+            text = " ".join(chunk)
         try:
             await bot.send_message(message.chat.id, text, parse_mode="HTML")
-            sent += len(batch)
-            await asyncio.sleep(MSG_DELAY)
+            sent += len(chunk)
+            import asyncio as _a
+            await _a.sleep(0.5)
         except Exception as e:
-            print(f"callall chunk {ci}: {e}")
+            print(f"callall chunk {i}: {e}")
             break
 
-    # 4) призыв окончен
-    try:
-        await bot.send_message(message.chat.id, "Призыв окончен.")
-    except Exception:
-        pass
+    diag = f"✅ Позвал {sent} чел. ({source}). Сообщений: {len(chunks)}."
+    if skipped:
+        diag += f" Пропустил {skipped} (в муте)."
+    await message.reply(diag)
 
-    print(f"callall: позвал {sent} эмодзи-пингов в {cid} ({member_count} чел. в базе)")
+
+
 
 
 async def main():
-    setup_logging("bot")
+    logging.basicConfig(level=logging.INFO)
     me = await bot.get_me()
     print(f"🚀 Боевой бот запущен: @{me.username} id={me.id}")
     try:
@@ -799,7 +889,6 @@ async def main():
             BotCommand(command="muteuser", description="Мод: замутить юзера"),
             BotCommand(command="unmuteuser", description="Мод: снять мут"),
             BotCommand(command="status", description="Что на прицеле"),
-            BotCommand(command="settings", description="Настройки (inline)"),
             BotCommand(command="stop", description="Отписаться"),
         ])
     except Exception as err:
