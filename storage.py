@@ -6,7 +6,7 @@ from typing import Optional
 
 from config import (
     GROUPS_FILE, USERS_FILE, MUTED_FILE, ATTACK_FILE,
-    CALLALL_FILE, REMIND_FILE, STATE_DIR,
+    STATE_DIR,
     DEFAULT_COUNT, DEFAULT_REMIND_MIN, MAX_GROUP_ATTEMPTS,
 )
 
@@ -171,7 +171,7 @@ def save_last(channel: str, d: dict) -> None:
     _write_json(last_file(channel), d)
 
 
-# === Attack on/off ===
+# === Attack on/off (глобально — влияет на все watcher'ы) ===
 
 def is_attack_on(channel: str = "") -> bool:
     """Проверяет глобальный + конкретный канал."""
@@ -194,20 +194,73 @@ def set_channel_on(channel: str, on: bool) -> None:
     print(f"Канал {channel}: {'ВКЛ' if on else 'ВЫКЛ'}")
 
 
-# === Callall ===
+# ═══════════════════════════════════════
+#  НАСТРОЙКИ ПО ГРУППАМ (per-group в groups.json)
+# ═══════════════════════════════════════
 
-def is_callall_on() -> bool:
-    return _read_text(CALLALL_FILE).lower() == "on"
+# Дефолты всех per-group настроек
+_GROUP_DEFAULTS = {
+    "count": DEFAULT_COUNT,          # черновиков на пост
+    "thread": None,                  # тред
+    "remind_minutes": DEFAULT_REMIND_MIN,  # интервал напоминалок (мин)
+    "callall": False,                # авто-тег всех при атаке
+    "warnings": True,                # предупреждения о % взвода
+    "general_chat": "",              # чат для предупреждений
+    # Настройки зазывалы
+    "who_can_mute": "all",
+    "who_can_call": "all",
+    "who_can_settings": "admins",
+    "auto_delete": False,
+    "delete_delay": 0,
+    "msg_delay": 0.5,
+    "mentions_per_msg": 5,
+}
 
 
-def set_callall(on: bool) -> None:
-    _write_text(CALLALL_FILE, "on" if on else "off")
-    print(f"Авто-callall при атаке: {'ВКЛ' if on else 'ВЫКЛ'}")
+def _get_group_cfg(cid: str) -> dict:
+    """Получить конфиг группы с дефолтами."""
+    g = load_groups()
+    cfg = g.get(cid, {})
+    result = dict(_GROUP_DEFAULTS)
+    result.update(cfg)
+    return result
 
 
-# === Remind ===
+def _set_group_cfg(cid: str, key: str, value) -> None:
+    """Установить настройку группы."""
+    g = load_groups()
+    if cid not in g:
+        g[cid] = {"count": DEFAULT_COUNT, "title": cid}
+    g[cid][key] = value
+    save_groups(g)
 
-def get_remind_minutes() -> int:
+
+# --- Черновики ---
+
+def get_count(cid: str) -> int:
+    return _get_group_cfg(cid).get("count", DEFAULT_COUNT)
+
+
+def set_count(cid: str, n: int) -> None:
+    _set_group_cfg(cid, "count", n)
+
+
+# --- Тред ---
+
+def get_thread(cid: str):
+    return _get_group_cfg(cid).get("thread")
+
+
+def set_thread(cid: str, thread_id) -> None:
+    _set_group_cfg(cid, "thread", thread_id)
+
+
+# --- Напоминалки ---
+
+def get_remind_minutes(cid: str = "") -> int:
+    if cid:
+        return _get_group_cfg(cid).get("remind_minutes", DEFAULT_REMIND_MIN)
+    # Fallback: глобальное для совместимости со старыми вызовами
     raw = _read_text(REMIND_FILE)
     if not raw:
         return DEFAULT_REMIND_MIN
@@ -218,79 +271,65 @@ def get_remind_minutes() -> int:
         return DEFAULT_REMIND_MIN
 
 
-def set_remind_minutes(minutes: int) -> None:
-    _write_text(REMIND_FILE, str(minutes))
-    print(f"Интервал напоминалок: {minutes} мин")
+def set_remind_minutes(cid: str, minutes: int) -> None:
+    _set_group_cfg(cid, "remind_minutes", minutes)
+    print(f"Интервал напоминалок ({cid}): {minutes} мин")
 
 
-# === General chat for warnings ===
-GENERAL_FILE = STATE_DIR / "general.txt"
+# --- Авто-callall ---
+
+def is_callall_on(cid: str = "") -> bool:
+    if cid:
+        return _get_group_cfg(cid).get("callall", False)
+    return _read_text(CALLALL_FILE).lower() == "on"
 
 
-def get_general_chat() -> str:
-    """ID чата куда слать предупреждения."""
-    return _read_text(GENERAL_FILE)
+def set_callall(cid: str, on: bool) -> None:
+    _set_group_cfg(cid, "callall", on)
+    print(f"Авто-callall ({cid}): {'ВКЛ' if on else 'ВЫКЛ'}")
 
 
-def set_general_chat(chat_id: str) -> None:
-    _write_text(GENERAL_FILE, chat_id)
-    print(f"Чат для предупреждений: {chat_id}")
+# --- Предупреждения ---
 
-
-# === Warnings toggle ===
-WARNINGS_FILE = STATE_DIR / "warnings_on.txt"
-
-
-def is_warnings_on() -> bool:
-    """Включены ли предупреждения о %% взвода."""
+def is_warnings_on(cid: str = "") -> bool:
+    if cid:
+        return _get_group_cfg(cid).get("warnings", True)
     val = _read_text(WARNINGS_FILE)
     if val == "":
-        return True  # по умолчанию включены
+        return True
     return val != "off"
 
 
-def set_warnings(on: bool) -> None:
-    _write_text(WARNINGS_FILE, "on" if on else "off")
-    print(f"Предупреждения: {'вкл' if on else 'выкл'}")
+def set_warnings(cid: str, on: bool) -> None:
+    _set_group_cfg(cid, "warnings", on)
+    print(f"Предупреждения ({cid}): {'вкл' if on else 'выкл'}")
 
 
-# ═══════════════════════════════════════
-#  НАСТРОЙКИ ЗАЗЫВАЛЫ (call_settings.json)
-# ═══════════════════════════════════════
+# --- Чат для предупреждений ---
 
-CALL_SETTINGS_FILE = STATE_DIR / "call_settings.json"
-
-# Дефолты настроек зазывалы
-CALL_DEFAULTS = {
-    "who_can_mute": "all",        # кто может мутить себя: all / admins
-    "who_can_call": "all",        # кто может делать /callall: all / admins
-    "who_can_settings": "admins", # кто может открывать настройки: all / admins
-    "auto_delete": False,         # автоудаление сообщений созыва
-    "delete_delay": 0,            # задержка удаления (сек), 0 = не удалять
-    "msg_delay": 0.5,             # задержка между сообщениями созыва (сек)
-    "mentions_per_msg": 5,        # количество упоминаний в одном сообщении
-}
+def get_general_chat(cid: str = "") -> str:
+    if cid:
+        return _get_group_cfg(cid).get("general_chat", "")
+    return _read_text(GENERAL_FILE)
 
 
-def _load_call_settings() -> dict:
-    """Загружает настройки зазывалы с дефолтами."""
-    data = _read_json(CALL_SETTINGS_FILE)
-    result = dict(CALL_DEFAULTS)
-    result.update(data)
-    return result
+def set_general_chat(cid: str, chat_id: str) -> None:
+    _set_group_cfg(cid, "general_chat", chat_id)
+    print(f"Чат для предупреждений ({cid}): {chat_id}")
 
 
-def _save_call_settings(data: dict) -> None:
-    _write_json(CALL_SETTINGS_FILE, data)
+# --- Настройки зазывалы (per-group) ---
+
+def get_call_setting(cid: str, key: str):
+    """Получить настройку зазывалы по ключу для группы."""
+    cfg = _get_group_cfg(cid)
+    return cfg.get(key, _GROUP_DEFAULTS.get(key))
 
 
-def get_call_setting(key: str):
-    """Получить настройку зазывалы по ключу."""
-    return _load_call_settings().get(key, CALL_DEFAULTS.get(key))
+def set_call_setting(cid: str, key: str, value) -> None:
+    """Установить настройку зазывалы для группы."""
+    _set_group_cfg(cid, key, value)
 
 
-def set_call_setting(key: str, value) -> None:
-    """Установить настройку зазывалы."""
-    data = _load_call_settings()
-    data[key] = value
-    _save_call_settings(data)
+WARNINGS_FILE = STATE_DIR / "warnings_on.txt"
+GENERAL_FILE = STATE_DIR / "general.txt"

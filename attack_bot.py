@@ -157,7 +157,7 @@ async def cmd_start(message: Message):
         "Как работаю:\n"
         "• Палю новые посты в @slay_awards.\n"
         f"• На новый пост кидаю сюда черновики (сейчас по {g[cid]['count']} шт) — разбирайте в комменты.\n"
-        f"• Каждые {get_remind_minutes()} мин напоминаю: пора атаковать — пока не выйдет новый пост. Интервал меняется через /remind N.\n\n"
+        f"• Каждые {get_remind_minutes(cid)} мин напоминаю: пора атаковать — пока не выйдет новый пост. Интервал меняется через /remind N.\n\n"
         "Команды:\n"
         "/setcount N — сколько черновиков кидать (1–20, только свои).\n"
         "/remind N — интервал напоминалок в минутах (1–1440).\n"
@@ -189,7 +189,7 @@ async def cmd_status(message: Message):
     g = load_groups()
     cid = str(message.chat.id)
     count = g.get(cid, {}).get("count", DEFAULT_COUNT)
-    remind_min = get_remind_minutes()
+    remind_min = get_remind_minutes(cid)
     import time
     lines = []
     for ch in CHANNELS:
@@ -207,7 +207,7 @@ async def cmd_status(message: Message):
         f"Черновиков на пост: {count}.\n"
         f"Напоминалка каждые: {remind_min} мин (/remind N — поменять).\n"
         f"Атаки: {'🔥 ВКЛ' if is_attack_on() else '🔴 ВЫКЛ'}.\n"
-        f"Авто-тег всех: {'📢 ВКЛ' if is_callall_on() else '🔕 ВЫКЛ'} (/autocall)."
+        f"Авто-тег всех: {'📢 ВКЛ' if is_callall_on(cid) else '🔕 ВЫКЛ'} (/autocall)."
     )
 
 
@@ -256,9 +256,10 @@ async def cmd_mute(message: Message):
         return
     if not message.from_user:
         return
+    cid = str(message.chat.id)
     # Проверка: кто может мутить себя
     from storage import get_call_setting
-    who = get_call_setting("who_can_mute")
+    who = get_call_setting(cid, "who_can_mute")
     if who == "admins":
         try:
             member = await bot.get_chat_member(message.chat.id, message.from_user.id)
@@ -324,20 +325,8 @@ async def cmd_unmute(message: Message):
 
 @dp.message(Command("call"))
 async def cmd_call_short(message: Message):
-    """Короткий алиас /autocall: /call on|off — рубильник авто-зазывалки при атаке."""
-    if not base.is_allowed(message) or not base.is_allowed_group(message):
-        await message.answer(base.REFUSE_TEXT)
-        return
-    parts = (message.text or "").split()
-    if len(parts) >= 2 and parts[1].lower() in ("on", "off", "вкл", "выкл", "1", "0"):
-        on = parts[1].lower() in ("on", "вкл", "1")
-        set_callall(on)
-    else:
-        on = not is_callall_on()
-        set_callall(on)
-    await message.answer(
-        "📢 Зазывалка ВКЛ — на новый пост сразу сбор всех." if on
-        else "🔕 Зазывалка ВЫКЛ — только ручной /callall. Включить: /call on")
+    """Короткий алиас /callall — зовёт всех (ZazyvalaStyle). Работает в любой группе."""
+    await cmd_callall(message)
 
 
 async def _resolve_target_user(message: Message) -> tuple[int, str] | None:
@@ -533,10 +522,11 @@ async def cmd_remind(message: Message):
     if not base.is_allowed(message) or not base.is_allowed_group(message):
         await message.answer(base.REFUSE_TEXT)
         return
+    cid = str(message.chat.id)
     parts = (message.text or "").split()
     if len(parts) < 2:
         await message.answer(
-            f"Сейчас напоминаю каждые {get_remind_minutes()} мин. "
+            f"Сейчас напоминаю каждые {get_remind_minutes(cid)} мин. "
             "Поменять: /remind N (от 1 до 1440 мин). 0 — вырубить напоминалки.")
         return
     if not parts[1].isdigit():
@@ -547,11 +537,10 @@ async def cmd_remind(message: Message):
         await message.answer("Давай от 0 до 1440 (это сутки). /remind 10")
         return
     if n == 0:
-        # удаляем файл = дефолт (5 мин). Чтобы реально вырубить, пишем 999999 или юзаем /attack off
-        set_remind_minutes(1)  # минимум = 1 мин, по сути прижато к полу
+        set_remind_minutes(cid, 1)
         await message.answer("Напоминалки прижаты к минимуму (1 мин). Чтобы вырубить совсем — /attack off.")
         return
-    set_remind_minutes(n)
+    set_remind_minutes(cid, n)
     await message.answer(f"✅ Принято, напоминаю каждые {n} мин. Следилка подхватит на следующем цикле (≤60 сек).")
 
 
@@ -561,15 +550,14 @@ async def cmd_setgeneral(message: Message):
     if not base.is_allowed(message) or not base.is_allowed_group(message):
         await message.answer(base.REFUSE_TEXT)
         return
+    cid = str(message.chat.id)
     parts = (message.text or "").split()
     if len(parts) < 2:
-        # Берём ID текущего чата
-        chat_id = str(message.chat.id)
-        set_general_chat(chat_id)
-        await message.answer(f"✅ Чат для предупреждений: {chat_id} ({message.chat.title or 'этот чат'})")
+        set_general_chat(cid, cid)
+        await message.answer(f"✅ Чат для предупреждений: {cid} ({message.chat.title or 'этот чат'})")
         return
     chat_id = parts[1]
-    set_general_chat(chat_id)
+    set_general_chat(cid, chat_id)
     await message.answer(f"✅ Чат для предупреждений: {chat_id}")
 
 
@@ -579,13 +567,14 @@ async def cmd_warnings(message: Message):
     if not base.is_allowed(message) or not base.is_allowed_group(message):
         await message.answer(base.REFUSE_TEXT)
         return
+    cid = str(message.chat.id)
     parts = (message.text or "").split()
     if len(parts) >= 2 and parts[1].lower() in ("on", "off", "вкл", "выкл", "1", "0"):
         on = parts[1].lower() in ("on", "вкл", "1")
-        set_warnings(on)
+        set_warnings(cid, on)
     else:
-        on = not is_warnings_on()
-        set_warnings(on)
+        on = not is_warnings_on(cid)
+        set_warnings(cid, on)
     status = "включены ✅" if on else "выключены ❌"
     await message.answer(f"Предупреждения о % взвода: {status}")
 
@@ -597,13 +586,14 @@ async def cmd_autocall(message: Message):
     if not base.is_allowed(message) or not base.is_allowed_group(message):
         await message.answer(base.REFUSE_TEXT)
         return
+    cid = str(message.chat.id)
     parts = (message.text or "").split()
     if len(parts) >= 2 and parts[1].lower() in ("on", "off", "вкл", "выкл", "1", "0"):
         on = parts[1].lower() in ("on", "вкл", "1")
-        set_callall(on)
+        set_callall(cid, on)
     else:
-        on = not is_callall_on()
-        set_callall(on)
+        on = not is_callall_on(cid)
+        set_callall(cid, on)
     await message.answer(
         "📢 Авто-тег ВСЕХ при атаке ВКЛЮЧЁН — на новый пост сразу сбор всех." if on
         else "🔕 Авто-тег ВЫКЛЮЧЁН — только ручной /callall. Используй /autocall когда надо.")
@@ -692,7 +682,7 @@ async def cmd_callall(message: Message):
 
     # Проверка: кто может делать /callall
     from storage import get_call_setting
-    who = get_call_setting("who_can_call")
+    who = get_call_setting(cid, "who_can_call")
     if who == "admins":
         try:
             member = await bot.get_chat_member(message.chat.id, message.from_user.id)
@@ -703,8 +693,8 @@ async def cmd_callall(message: Message):
             pass
 
     # Настройки зазывалы
-    EMOJIS_PER_MSG = get_call_setting("mentions_per_msg")
-    MSG_DELAY = get_call_setting("msg_delay")
+    EMOJIS_PER_MSG = get_call_setting(cid, "mentions_per_msg")
+    MSG_DELAY = get_call_setting(cid, "msg_delay")
 
     # 1) пытаемся через Telethon получить всех участников
     users_here = load_users().get(cid, {})

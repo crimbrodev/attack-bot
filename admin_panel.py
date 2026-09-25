@@ -10,19 +10,20 @@ from aiogram.enums import ParseMode
 
 from config import CHANNELS, ALLOWED_GROUPS
 from storage import (
-    load_groups, save_groups, get_remind_minutes, set_remind_minutes,
+    load_groups, save_groups,
+    get_remind_minutes, set_remind_minutes,
     is_attack_on, set_attack, set_channel_on,
     is_callall_on, set_callall,
     is_warnings_on, set_warnings,
     get_general_chat, set_general_chat,
     get_call_setting, set_call_setting,
+    get_count, set_count,
 )
 
 router = Router()
 
 
 async def _is_admin(cb: CallbackQuery) -> bool:
-    """Проверяет является ли пользователь админом/создателем группы."""
     try:
         member = await cb.bot.get_chat_member(cb.message.chat.id, cb.from_user.id)
         return member.status in ("administrator", "creator")
@@ -32,6 +33,10 @@ async def _is_admin(cb: CallbackQuery) -> bool:
 
 def _is_allowed(chat_id: int) -> bool:
     return str(chat_id) in ALLOWED_GROUPS
+
+
+def _cid(cb: CallbackQuery) -> str:
+    return str(cb.message.chat.id)
 
 
 # ═══════════════════════════════════════
@@ -76,14 +81,14 @@ async def cb_main_menu(cb: CallbackQuery):
 
 WHO_OPTIONS = {"all": "Все", "admins": "Только админы"}
 
-def _zazyvala_kb() -> InlineKeyboardMarkup:
-    who_mute = get_call_setting("who_can_mute")
-    who_call = get_call_setting("who_can_call")
-    who_settings = get_call_setting("who_can_settings")
-    auto_del = get_call_setting("auto_delete")
-    del_delay = get_call_setting("delete_delay")
-    msg_delay = get_call_setting("msg_delay")
-    per_msg = get_call_setting("mentions_per_msg")
+def _zazyvala_kb(cid: str) -> InlineKeyboardMarkup:
+    who_mute = get_call_setting(cid, "who_can_mute")
+    who_call = get_call_setting(cid, "who_can_call")
+    who_settings = get_call_setting(cid, "who_can_settings")
+    auto_del = get_call_setting(cid, "auto_delete")
+    del_delay = get_call_setting(cid, "delete_delay")
+    msg_delay = get_call_setting(cid, "msg_delay")
+    per_msg = get_call_setting(cid, "mentions_per_msg")
 
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
@@ -123,37 +128,28 @@ async def cb_zazyvala_menu(cb: CallbackQuery):
     if not await _is_admin(cb):
         await cb.answer("Только для админов группы.", show_alert=True)
         return
+    cid = _cid(cb)
     await cb.message.edit_text(
         "📢 <b>Настройки зазывалы:</b>",
         parse_mode=ParseMode.HTML,
-        reply_markup=_zazyvala_kb(),
+        reply_markup=_zazyvala_kb(cid),
     )
     await cb.answer()
 
 
-# --- Кто может мутить себя ---
 @router.callback_query(F.data == "adm:z:who_mute")
 async def cb_z_who_mute(cb: CallbackQuery):
     if not await _is_admin(cb):
         await cb.answer("Только для админов группы.", show_alert=True)
         return
-    current = get_call_setting("who_can_mute")
+    cid = _cid(cb)
+    current = get_call_setting(cid, "who_can_mute")
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text=f"{'✅ ' if current == 'all' else ''}Все",
-            callback_data="adm:z:who_mute:all",
-        )],
-        [InlineKeyboardButton(
-            text=f"{'✅ ' if current == 'admins' else ''}Только админы",
-            callback_data="adm:z:who_mute:admins",
-        )],
+        [InlineKeyboardButton(text=f"{'✅ ' if current == 'all' else ''}Все", callback_data="adm:z:who_mute:all")],
+        [InlineKeyboardButton(text=f"{'✅ ' if current == 'admins' else ''}Только админы", callback_data="adm:z:who_mute:admins")],
         [InlineKeyboardButton(text="↩️ Назад", callback_data="adm:zazyvala")],
     ])
-    await cb.message.edit_text(
-        "🔇 <b>Кто может мутить себя (выходить из призыва)?</b>",
-        parse_mode=ParseMode.HTML,
-        reply_markup=kb,
-    )
+    await cb.message.edit_text("🔇 <b>Кто может мутить себя?</b>", parse_mode=ParseMode.HTML, reply_markup=kb)
     await cb.answer()
 
 
@@ -162,35 +158,26 @@ async def cb_z_who_mute_apply(cb: CallbackQuery):
     if not await _is_admin(cb):
         await cb.answer("Только для админов группы.", show_alert=True)
         return
+    cid = _cid(cb)
     val = cb.data.split(":")[-1]
-    set_call_setting("who_can_mute", val)
-    await cb.answer(f"✅ Кто может мутить: {WHO_OPTIONS.get(val, val)}", show_alert=True)
+    set_call_setting(cid, "who_can_mute", val)
+    await cb.answer(f"✅ {WHO_OPTIONS.get(val, val)}", show_alert=True)
     await cb_zazyvala_menu(cb)
 
 
-# --- Кто может делать /callall ---
 @router.callback_query(F.data == "adm:z:who_call")
 async def cb_z_who_call(cb: CallbackQuery):
     if not await _is_admin(cb):
         await cb.answer("Только для админов группы.", show_alert=True)
         return
-    current = get_call_setting("who_can_call")
+    cid = _cid(cb)
+    current = get_call_setting(cid, "who_can_call")
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text=f"{'✅ ' if current == 'all' else ''}Все",
-            callback_data="adm:z:who_call:all",
-        )],
-        [InlineKeyboardButton(
-            text=f"{'✅ ' if current == 'admins' else ''}Только админы",
-            callback_data="adm:z:who_call:admins",
-        )],
+        [InlineKeyboardButton(text=f"{'✅ ' if current == 'all' else ''}Все", callback_data="adm:z:who_call:all")],
+        [InlineKeyboardButton(text=f"{'✅ ' if current == 'admins' else ''}Только админы", callback_data="adm:z:who_call:admins")],
         [InlineKeyboardButton(text="↩️ Назад", callback_data="adm:zazyvala")],
     ])
-    await cb.message.edit_text(
-        "📢 <b>Кто может делать /callall?</b>",
-        parse_mode=ParseMode.HTML,
-        reply_markup=kb,
-    )
+    await cb.message.edit_text("📢 <b>Кто может делать /callall?</b>", parse_mode=ParseMode.HTML, reply_markup=kb)
     await cb.answer()
 
 
@@ -199,35 +186,26 @@ async def cb_z_who_call_apply(cb: CallbackQuery):
     if not await _is_admin(cb):
         await cb.answer("Только для админов группы.", show_alert=True)
         return
+    cid = _cid(cb)
     val = cb.data.split(":")[-1]
-    set_call_setting("who_can_call", val)
-    await cb.answer(f"✅ Кто может делать /callall: {WHO_OPTIONS.get(val, val)}", show_alert=True)
+    set_call_setting(cid, "who_can_call", val)
+    await cb.answer(f"✅ {WHO_OPTIONS.get(val, val)}", show_alert=True)
     await cb_zazyvala_menu(cb)
 
 
-# --- Кто может открывать настройки ---
 @router.callback_query(F.data == "adm:z:who_settings")
 async def cb_z_who_settings(cb: CallbackQuery):
     if not await _is_admin(cb):
         await cb.answer("Только для админов группы.", show_alert=True)
         return
-    current = get_call_setting("who_can_settings")
+    cid = _cid(cb)
+    current = get_call_setting(cid, "who_can_settings")
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text=f"{'✅ ' if current == 'all' else ''}Все",
-            callback_data="adm:z:who_settings:all",
-        )],
-        [InlineKeyboardButton(
-            text=f"{'✅ ' if current == 'admins' else ''}Только админы",
-            callback_data="adm:z:who_settings:admins",
-        )],
+        [InlineKeyboardButton(text=f"{'✅ ' if current == 'all' else ''}Все", callback_data="adm:z:who_settings:all")],
+        [InlineKeyboardButton(text=f"{'✅ ' if current == 'admins' else ''}Только админы", callback_data="adm:z:who_settings:admins")],
         [InlineKeyboardButton(text="↩️ Назад", callback_data="adm:zazyvala")],
     ])
-    await cb.message.edit_text(
-        "⚙️ <b>Кто может открывать настройки зазывалы?</b>",
-        parse_mode=ParseMode.HTML,
-        reply_markup=kb,
-    )
+    await cb.message.edit_text("⚙️ <b>Кто может открывать настройки?</b>", parse_mode=ParseMode.HTML, reply_markup=kb)
     await cb.answer()
 
 
@@ -236,26 +214,25 @@ async def cb_z_who_settings_apply(cb: CallbackQuery):
     if not await _is_admin(cb):
         await cb.answer("Только для админов группы.", show_alert=True)
         return
+    cid = _cid(cb)
     val = cb.data.split(":")[-1]
-    set_call_setting("who_can_settings", val)
-    await cb.answer(f"✅ Кто может открывать настройки: {WHO_OPTIONS.get(val, val)}", show_alert=True)
+    set_call_setting(cid, "who_can_settings", val)
+    await cb.answer(f"✅ {WHO_OPTIONS.get(val, val)}", show_alert=True)
     await cb_zazyvala_menu(cb)
 
 
-# --- Автоудаление сообщений созыва ---
 @router.callback_query(F.data == "adm:z:auto_delete")
 async def cb_z_auto_delete(cb: CallbackQuery):
     if not await _is_admin(cb):
         await cb.answer("Только для админов группы.", show_alert=True)
         return
-    current = get_call_setting("auto_delete")
-    set_call_setting("auto_delete", not current)
-    status = "✅ ВКЛ" if not current else "❌ ВЫКЛ"
-    await cb.answer(f"Автоудаление сообщений созыва: {status}", show_alert=True)
+    cid = _cid(cb)
+    current = get_call_setting(cid, "auto_delete")
+    set_call_setting(cid, "auto_delete", not current)
+    await cb.answer(f"{'✅ ВКЛ' if not current else '❌ ВЫКЛ'}", show_alert=True)
     await cb_zazyvala_menu(cb)
 
 
-# --- Задержка удаления ---
 @router.callback_query(F.data == "adm:z:del_delay")
 async def cb_z_del_delay(cb: CallbackQuery):
     if not await _is_admin(cb):
@@ -263,21 +240,11 @@ async def cb_z_del_delay(cb: CallbackQuery):
         return
     variants = [0, 5, 10, 15, 30, 60, 120, 300]
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text=f"{v} сек" if v > 0 else "Не удалять",
-            callback_data=f"adm:z:del_delay:{v}",
-        ) for v in variants[:4]],
-        [InlineKeyboardButton(
-            text=f"{v} сек",
-            callback_data=f"adm:z:del_delay:{v}",
-        ) for v in variants[4:]],
+        [InlineKeyboardButton(text=f"{v} сек" if v > 0 else "Не удалять", callback_data=f"adm:z:del_delay:{v}") for v in variants[:4]],
+        [InlineKeyboardButton(text=f"{v} сек", callback_data=f"adm:z:del_delay:{v}") for v in variants[4:]],
         [InlineKeyboardButton(text="↩️ Назад", callback_data="adm:zazyvala")],
     ])
-    await cb.message.edit_text(
-        "⏳ <b>Задержка перед удалением сообщений созыва:</b>",
-        parse_mode=ParseMode.HTML,
-        reply_markup=kb,
-    )
+    await cb.message.edit_text("⏳ <b>Задержка удаления:</b>", parse_mode=ParseMode.HTML, reply_markup=kb)
     await cb.answer()
 
 
@@ -286,15 +253,14 @@ async def cb_z_del_delay_apply(cb: CallbackQuery):
     if not await _is_admin(cb):
         await cb.answer("Только для админов группы.", show_alert=True)
         return
+    cid = _cid(cb)
     n = int(cb.data.split(":")[-1])
-    set_call_setting("delete_delay", n)
-    set_call_setting("auto_delete", n > 0)
-    txt = f"✅ Задержка удаления: {n} сек" if n > 0 else "✅ Удаление отключено"
-    await cb.answer(txt, show_alert=True)
+    set_call_setting(cid, "delete_delay", n)
+    set_call_setting(cid, "auto_delete", n > 0)
+    await cb.answer(f"✅ {n} сек" if n > 0 else "✅ Отключено", show_alert=True)
     await cb_zazyvala_menu(cb)
 
 
-# --- Задержка между сообщениями ---
 @router.callback_query(F.data == "adm:z:msg_delay")
 async def cb_z_msg_delay(cb: CallbackQuery):
     if not await _is_admin(cb):
@@ -302,21 +268,11 @@ async def cb_z_msg_delay(cb: CallbackQuery):
         return
     variants = [0.3, 0.5, 1, 2, 3, 5, 10]
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text=f"{v} сек",
-            callback_data=f"adm:z:msg_delay:{v}",
-        ) for v in variants[:4]],
-        [InlineKeyboardButton(
-            text=f"{v} сек",
-            callback_data=f"adm:z:msg_delay:{v}",
-        ) for v in variants[4:]],
+        [InlineKeyboardButton(text=f"{v} сек", callback_data=f"adm:z:msg_delay:{v}") for v in variants[:4]],
+        [InlineKeyboardButton(text=f"{v} сек", callback_data=f"adm:z:msg_delay:{v}") for v in variants[4:]],
         [InlineKeyboardButton(text="↩️ Назад", callback_data="adm:zazyvala")],
     ])
-    await cb.message.edit_text(
-        "⏱ <b>Задержка между сообщениями созыва:</b>",
-        parse_mode=ParseMode.HTML,
-        reply_markup=kb,
-    )
+    await cb.message.edit_text("⏱ <b>Задержка между сообщениями:</b>", parse_mode=ParseMode.HTML, reply_markup=kb)
     await cb.answer()
 
 
@@ -325,13 +281,13 @@ async def cb_z_msg_delay_apply(cb: CallbackQuery):
     if not await _is_admin(cb):
         await cb.answer("Только для админов группы.", show_alert=True)
         return
+    cid = _cid(cb)
     v = float(cb.data.split(":")[-1])
-    set_call_setting("msg_delay", v)
-    await cb.answer(f"✅ Задержка между сообщениями: {v} сек", show_alert=True)
+    set_call_setting(cid, "msg_delay", v)
+    await cb.answer(f"✅ {v} сек", show_alert=True)
     await cb_zazyvala_menu(cb)
 
 
-# --- Упоминаний в сообщении ---
 @router.callback_query(F.data == "adm:z:per_msg")
 async def cb_z_per_msg(cb: CallbackQuery):
     if not await _is_admin(cb):
@@ -339,21 +295,11 @@ async def cb_z_per_msg(cb: CallbackQuery):
         return
     variants = [1, 2, 3, 5, 7, 10]
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text=str(v),
-            callback_data=f"adm:z:per_msg:{v}",
-        ) for v in variants[:3]],
-        [InlineKeyboardButton(
-            text=str(v),
-            callback_data=f"adm:z:per_msg:{v}",
-        ) for v in variants[3:]],
+        [InlineKeyboardButton(text=str(v), callback_data=f"adm:z:per_msg:{v}") for v in variants[:3]],
+        [InlineKeyboardButton(text=str(v), callback_data=f"adm:z:per_msg:{v}") for v in variants[3:]],
         [InlineKeyboardButton(text="↩️ Назад", callback_data="adm:zazyvala")],
     ])
-    await cb.message.edit_text(
-        "🔢 <b>Сколько упоминаний в одном сообщении?</b>",
-        parse_mode=ParseMode.HTML,
-        reply_markup=kb,
-    )
+    await cb.message.edit_text("🔢 <b>Упоминаний в сообщении:</b>", parse_mode=ParseMode.HTML, reply_markup=kb)
     await cb.answer()
 
 
@@ -362,15 +308,15 @@ async def cb_z_per_msg_apply(cb: CallbackQuery):
     if not await _is_admin(cb):
         await cb.answer("Только для админов группы.", show_alert=True)
         return
+    cid = _cid(cb)
     n = int(cb.data.split(":")[-1])
-    set_call_setting("mentions_per_msg", n)
-    await cb.answer(f"✅ Упоминаний в сообщении: {n}", show_alert=True)
+    set_call_setting(cid, "mentions_per_msg", n)
+    await cb.answer(f"✅ {n}", show_alert=True)
     await cb_zazyvala_menu(cb)
 
 
 # ═══════════════════════════════════════
 #  УПРАВЛЕНИЕ АТАКАМИ (только разрешённые)
-#  включает настройки созыва (черновики, напоминалки)
 # ═══════════════════════════════════════
 
 def _attacks_kb() -> InlineKeyboardMarkup:
@@ -379,14 +325,8 @@ def _attacks_kb() -> InlineKeyboardMarkup:
     for ch in CHANNELS:
         ch_on = is_attack_on(ch)
         icon = "✅" if ch_on else "❌"
-        buttons.append([InlineKeyboardButton(
-            text=f"{icon} @{ch}",
-            callback_data=f"adm:attack:{ch}",
-        )])
-    buttons.append([InlineKeyboardButton(
-        text=f"{'🔴' if all_on else '🟢'} Всё {'выкл' if all_on else 'вкл'}",
-        callback_data="adm:attack:all",
-    )])
+        buttons.append([InlineKeyboardButton(text=f"{icon} @{ch}", callback_data=f"adm:attack:{ch}")])
+    buttons.append([InlineKeyboardButton(text=f"{'🔴' if all_on else '🟢'} Всё {'выкл' if all_on else 'вкл'}", callback_data="adm:attack:all")])
     buttons.append([InlineKeyboardButton(text="⚡ Настройки созыва", callback_data="adm:calls")])
     buttons.append([InlineKeyboardButton(text="↩️ Назад", callback_data="adm:menu")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -398,13 +338,9 @@ async def cb_attacks_menu(cb: CallbackQuery):
         await cb.answer("Только для админов группы.", show_alert=True)
         return
     if not _is_allowed(cb.message.chat.id):
-        await cb.answer("Атаки настраиваются только в основной группе.", show_alert=True)
+        await cb.answer("Атаки только в основной группе.", show_alert=True)
         return
-    await cb.message.edit_text(
-        "⚔️ <b>Управление атаками:</b>\nНажми на канал чтобы вкл/выкл.",
-        parse_mode=ParseMode.HTML,
-        reply_markup=_attacks_kb(),
-    )
+    await cb.message.edit_text("⚔️ <b>Управление атаками:</b>", parse_mode=ParseMode.HTML, reply_markup=_attacks_kb())
     await cb.answer()
 
 
@@ -414,7 +350,7 @@ async def cb_attack_toggle(cb: CallbackQuery):
         await cb.answer("Только для админов группы.", show_alert=True)
         return
     if not _is_allowed(cb.message.chat.id):
-        await cb.answer("Атаки настраиваются только в основной группе.", show_alert=True)
+        await cb.answer("Атаки только в основной группе.", show_alert=True)
         return
     ch = cb.data.split(":")[-1]
     if ch == "all":
@@ -422,23 +358,21 @@ async def cb_attack_toggle(cb: CallbackQuery):
         set_attack(new_state)
         for c in CHANNELS:
             set_channel_on(c, new_state)
-        status = "ВКЛ" if new_state else "ВЫКЛ"
-        await cb.answer(f"Все атаки: {status}", show_alert=True)
+        await cb.answer(f"{'ВКЛ' if new_state else 'ВЫКЛ'}", show_alert=True)
     else:
         on = not is_attack_on(ch)
         set_channel_on(ch, on)
-        status = "ВКЛ" if on else "ВЫКЛ"
-        await cb.answer(f"@{ch}: {status}", show_alert=True)
+        await cb.answer(f"@{ch}: {'ВКЛ' if on else 'ВЫКЛ'}", show_alert=True)
     await cb_attacks_menu(cb)
 
 
-# --- Настройки созыва (черновики, напоминалки) — внутри атак ---
+# --- Настройки созыва (per-group) ---
+
 def _calls_kb(cid: str) -> InlineKeyboardMarkup:
-    g = load_groups()
-    count = g.get(cid, {}).get("count", 5)
-    remind = get_remind_minutes()
-    autocall = "✅ ВКЛ" if is_callall_on() else "❌ ВЫКЛ"
-    warnings = "✅ ВКЛ" if is_warnings_on() else "❌ ВЫКЛ"
+    count = get_count(cid)
+    remind = get_remind_minutes(cid)
+    autocall = "✅ ВКЛ" if is_callall_on(cid) else "❌ ВЫКЛ"
+    warnings = "✅ ВКЛ" if is_warnings_on(cid) else "❌ ВЫКЛ"
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=f"📝 Черновиков на пост: {count}", callback_data="adm:setcount")],
         [InlineKeyboardButton(text=f"🔔 Напоминалка: каждые {remind} мин", callback_data="adm:remind")],
@@ -453,12 +387,8 @@ async def cb_calls_menu(cb: CallbackQuery):
     if not await _is_admin(cb):
         await cb.answer("Только для админов группы.", show_alert=True)
         return
-    cid = str(cb.message.chat.id)
-    await cb.message.edit_text(
-        "⚡ <b>Настройки созыва:</b>",
-        parse_mode=ParseMode.HTML,
-        reply_markup=_calls_kb(cid),
-    )
+    cid = _cid(cb)
+    await cb.message.edit_text("⚡ <b>Настройки созыва:</b>", parse_mode=ParseMode.HTML, reply_markup=_calls_kb(cid))
     await cb.answer()
 
 
@@ -474,11 +404,7 @@ async def cb_setcount_prompt(cb: CallbackQuery):
         [InlineKeyboardButton(text=str(i), callback_data=f"adm:setcount:{i}") for i in range(16, 21)],
         [InlineKeyboardButton(text="↩️ Назад", callback_data="adm:calls")],
     ])
-    await cb.message.edit_text(
-        "📝 <b>Сколько черновиков на пост?</b>",
-        parse_mode=ParseMode.HTML,
-        reply_markup=kb,
-    )
+    await cb.message.edit_text("📝 <b>Сколько черновиков?</b>", parse_mode=ParseMode.HTML, reply_markup=kb)
     await cb.answer()
 
 
@@ -487,21 +413,11 @@ async def cb_setcount_apply(cb: CallbackQuery):
     if not await _is_admin(cb):
         await cb.answer("Только для админов группы.", show_alert=True)
         return
+    cid = _cid(cb)
     n = int(cb.data.split(":")[-1])
-    g = load_groups()
-    cid = str(cb.message.chat.id)
-    if cid not in g:
-        g[cid] = {"count": n, "title": cb.message.chat.title or cid}
-    else:
-        g[cid]["count"] = n
-    save_groups(g)
-    await cb.answer(f"✅ Теперь кидаю по {n} черновиков.", show_alert=True)
-    cid = str(cb.message.chat.id)
-    await cb.message.edit_text(
-        "⚡ <b>Настройки созыва:</b>",
-        parse_mode=ParseMode.HTML,
-        reply_markup=_calls_kb(cid),
-    )
+    set_count(cid, n)
+    await cb.answer(f"✅ {n} черновиков", show_alert=True)
+    await cb.message.edit_text("⚡ <b>Настройки созыва:</b>", parse_mode=ParseMode.HTML, reply_markup=_calls_kb(cid))
 
 
 @router.callback_query(F.data == "adm:remind")
@@ -515,11 +431,7 @@ async def cb_remind_prompt(cb: CallbackQuery):
         [InlineKeyboardButton(text=f"{m} мин", callback_data=f"adm:remind:{m}") for m in variants[4:]],
         [InlineKeyboardButton(text="↩️ Назад", callback_data="adm:calls")],
     ])
-    await cb.message.edit_text(
-        "🔔 <b>Интервал напоминалок:</b>",
-        parse_mode=ParseMode.HTML,
-        reply_markup=kb,
-    )
+    await cb.message.edit_text("🔔 <b>Интервал напоминалок:</b>", parse_mode=ParseMode.HTML, reply_markup=kb)
     await cb.answer()
 
 
@@ -528,15 +440,11 @@ async def cb_remind_apply(cb: CallbackQuery):
     if not await _is_admin(cb):
         await cb.answer("Только для админов группы.", show_alert=True)
         return
+    cid = _cid(cb)
     n = int(cb.data.split(":")[-1])
-    set_remind_minutes(n)
-    await cb.answer(f"✅ Напоминалка каждые {n} мин.", show_alert=True)
-    cid = str(cb.message.chat.id)
-    await cb.message.edit_text(
-        "⚡ <b>Настройки созыва:</b>",
-        parse_mode=ParseMode.HTML,
-        reply_markup=_calls_kb(cid),
-    )
+    set_remind_minutes(cid, n)
+    await cb.answer(f"✅ Каждые {n} мин", show_alert=True)
+    await cb.message.edit_text("⚡ <b>Настройки созыва:</b>", parse_mode=ParseMode.HTML, reply_markup=_calls_kb(cid))
 
 
 @router.callback_query(F.data == "adm:autocall")
@@ -544,16 +452,11 @@ async def cb_autocall_toggle(cb: CallbackQuery):
     if not await _is_admin(cb):
         await cb.answer("Только для админов группы.", show_alert=True)
         return
-    on = not is_callall_on()
-    set_callall(on)
-    status = "✅ ВКЛ" if on else "❌ ВЫКЛ"
-    await cb.answer(f"Авто-тег всех: {status}", show_alert=True)
-    cid = str(cb.message.chat.id)
-    await cb.message.edit_text(
-        "⚡ <b>Настройки созыва:</b>",
-        parse_mode=ParseMode.HTML,
-        reply_markup=_calls_kb(cid),
-    )
+    cid = _cid(cb)
+    on = not is_callall_on(cid)
+    set_callall(cid, on)
+    await cb.answer(f"{'✅ ВКЛ' if on else '❌ ВЫКЛ'}", show_alert=True)
+    await cb.message.edit_text("⚡ <b>Настройки созыва:</b>", parse_mode=ParseMode.HTML, reply_markup=_calls_kb(cid))
 
 
 @router.callback_query(F.data == "adm:warnings")
@@ -561,24 +464,19 @@ async def cb_warnings_toggle(cb: CallbackQuery):
     if not await _is_admin(cb):
         await cb.answer("Только для админов группы.", show_alert=True)
         return
-    on = not is_warnings_on()
-    set_warnings(on)
-    status = "✅ ВКЛ" if on else "❌ ВЫКЛ"
-    await cb.answer(f"Предупреждения взвода: {status}", show_alert=True)
-    cid = str(cb.message.chat.id)
-    await cb.message.edit_text(
-        "⚡ <b>Настройки созыва:</b>",
-        parse_mode=ParseMode.HTML,
-        reply_markup=_calls_kb(cid),
-    )
+    cid = _cid(cb)
+    on = not is_warnings_on(cid)
+    set_warnings(cid, on)
+    await cb.answer(f"{'✅ ВКЛ' if on else '❌ ВЫКЛ'}", show_alert=True)
+    await cb.message.edit_text("⚡ <b>Настройки созыва:</b>", parse_mode=ParseMode.HTML, reply_markup=_calls_kb(cid))
 
 
 # ═══════════════════════════════════════
 #  ДРУГОЕ (только разрешённые)
 # ═══════════════════════════════════════
 
-def _other_kb() -> InlineKeyboardMarkup:
-    general = get_general_chat() or "не задан"
+def _other_kb(cid: str) -> InlineKeyboardMarkup:
+    general = get_general_chat(cid) or "не задан"
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=f"💬 Чат уведомлений: {general}", callback_data="adm:setgeneral")],
         [InlineKeyboardButton(text="↩️ Назад", callback_data="adm:menu")],
@@ -591,13 +489,10 @@ async def cb_other_menu(cb: CallbackQuery):
         await cb.answer("Только для админов группы.", show_alert=True)
         return
     if not _is_allowed(cb.message.chat.id):
-        await cb.answer("Эти настройки только в основной группе.", show_alert=True)
+        await cb.answer("Только в основной группе.", show_alert=True)
         return
-    await cb.message.edit_text(
-        "⚙️ <b>Другие настройки:</b>",
-        parse_mode=ParseMode.HTML,
-        reply_markup=_other_kb(),
-    )
+    cid = _cid(cb)
+    await cb.message.edit_text("⚙️ <b>Другие настройки:</b>", parse_mode=ParseMode.HTML, reply_markup=_other_kb(cid))
     await cb.answer()
 
 
@@ -606,15 +501,11 @@ async def cb_setgeneral_apply(cb: CallbackQuery):
     if not await _is_admin(cb):
         await cb.answer("Только для админов группы.", show_alert=True)
         return
-    chat_id = str(cb.message.chat.id)
-    set_general_chat(chat_id)
-    await cb.answer(f"✅ Чат для уведомлений: {chat_id}", show_alert=True)
-    await cb_other_menu(cb)
+    cid = _cid(cb)
+    set_general_chat(cid, cid)
+    await cb.answer(f"✅ Чат: {cid}", show_alert=True)
+    await cb.message.edit_text("⚙️ <b>Другие настройки:</b>", parse_mode=ParseMode.HTML, reply_markup=_other_kb(cid))
 
-
-# ═══════════════════════════════════════
-#  ЗАКРЫТЬ
-# ═══════════════════════════════════════
 
 @router.callback_query(F.data == "adm:close")
 async def cb_close(cb: CallbackQuery):

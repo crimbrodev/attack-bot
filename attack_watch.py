@@ -16,13 +16,13 @@ from watcher import parse_posts, fetch_preview, make_comment, DEFAULT_CHANNEL as
 
 from aiogram import Bot
 
-from config import BOT_TOKEN, POLL_SEC, MAX_GROUP_ATTEMPTS, WARNING_THRESHOLD
+from config import BOT_TOKEN, POLL_SEC, MAX_GROUP_ATTEMPTS, WARNING_THRESHOLD, ALLOWED_GROUPS
 from storage import (
     load_groups, load_last, save_last,
     is_attack_on, get_remind_minutes, is_callall_on,
     increment_group_errors, reset_group_errors, remove_group,
     build_tags_from_users, load_muted, load_users,
-    get_general_chat, is_warnings_on,
+    get_general_chat, is_warnings_on, get_call_setting,
 )
 
 CHANNEL = os.environ.get("HERMES_CHANNEL", _WATCH_CHANNEL)
@@ -52,6 +52,8 @@ async def attack(pid: int, post_text: str) -> None:
         print(f"Пост {pid} есть, но групп нет — молчу.")
         return
     for cid, cfg in groups.items():
+        if cid not in ALLOWED_GROUPS:
+            continue
         count = max(1, min(20, int(cfg.get("count", 5))))
         thread = cfg.get("thread")
         kwargs = {"message_thread_id": thread} if thread else {}
@@ -76,7 +78,7 @@ async def attack(pid: int, post_text: str) -> None:
                     parse_mode="HTML", **kwargs)
                 await asyncio.sleep(2)  # пауза между черновиками чтобы Groq не задdosили
             # если включён авто-callall — сразу пингуем всех (ZazyvalaStyle)
-            if is_callall_on():
+            if is_callall_on(cid):
                 try:
                     import random as _rnd
                     from storage import load_muted, load_users, get_call_setting
@@ -98,8 +100,8 @@ async def attack(pid: int, post_text: str) -> None:
                         active.append((uid, info))
                     if active:
                         _rnd.shuffle(active)
-                        per_msg = get_call_setting("mentions_per_msg")
-                        msg_delay = get_call_setting("msg_delay")
+                        per_msg = get_call_setting(cid, "mentions_per_msg")
+                        msg_delay = get_call_setting(cid, "msg_delay")
                         emoji_tags = []
                         for uid, info in active:
                             emoji = _rnd.choice(ALL_EMOJIS)
@@ -124,18 +126,22 @@ async def attack(pid: int, post_text: str) -> None:
                     continue
             print(f"Атака в {cid} не ушла: {err}")
 
-    # Через 2 мин проверяем % и кричим если мало
-    # (только для основного канала, чтобы не дублировать от streaminside/BotovodX)
+    # Через 2 мин проверяем % и кричим если мало (per-group warnings)
     await asyncio.sleep(120)
     if CHANNEL != "slay_awards":
         return
     try:
         from comments import get_post_commenters, calc_squad_percentage
         commenters = await get_post_commenters(CHANNEL, pid)
-        squad_count, total, pct = calc_squad_percentage(commenters, load_users())
-        if total > 0 and pct < WARNING_THRESHOLD and is_warnings_on():
-            general = get_general_chat()
-            if general:
+        all_groups = load_groups()
+        for w_cid, w_cfg in all_groups.items():
+            if not is_warnings_on(w_cid):
+                continue
+            general = get_general_chat(w_cid)
+            if not general:
+                continue
+            squad_count, total, pct = calc_squad_percentage(commenters, load_users())
+            if total > 0 and pct < WARNING_THRESHOLD:
                 try:
                     await tg.send_message(
                         general,
@@ -149,8 +155,7 @@ async def attack(pid: int, post_text: str) -> None:
         pass
 
 
-async def remind(pid: int, minutes: int) -> None:
-    from config import ALLOWED_GROUPS
+async def remind(pid: int, minutes: int, target_cid: str = "") -> None:
     groups = load_groups()
 
     # Получаем комментарии и считаем % от взвода
@@ -167,8 +172,10 @@ async def remind(pid: int, minutes: int) -> None:
         pct_text = f"\n\n💬 Комментариев: {total}, от взвода: {squad_count} ({pct:.0f}%)"
 
     for cid, cfg in groups.items():
-        # Напоминалки только в разрешённых группах
+        # Напоминалки только в разрешённых группах (и только целевой, если задан)
         if cid not in ALLOWED_GROUPS:
+            continue
+        if target_cid and cid != target_cid:
             continue
         thread = cfg.get("thread")
         kwargs = {"message_thread_id": thread} if thread else {}
@@ -178,9 +185,9 @@ async def remind(pid: int, minutes: int) -> None:
                 f"⏰ Прошло {minutes} мин с поста — пора АТАКОВАТЬ!\n{link(pid)}{pct_text}{base.SIGN}",
                 parse_mode="HTML", **kwargs)
             reset_group_errors(cid)
-            # Если взвод пишет меньше 42% — кричим в общий чат (только slay_awards)
-            if total > 0 and pct < WARNING_THRESHOLD and is_warnings_on() and CHANNEL == "slay_awards":
-                general = get_general_chat()
+            # Если взвод пишет меньше 42% — кричим в общий чат (per-group)
+            if total > 0 and pct < WARNING_THRESHOLD and is_warnings_on(cid) and CHANNEL == "slay_awards":
+                general = get_general_chat(cid)
                 if general:
                     try:
                         await tg.send_message(
@@ -206,7 +213,7 @@ async def main() -> None:
     posts = parse_posts(fetch_preview(CHANNEL))
     if first:
         ids = [pid for pid, _ in posts]
-        last = {"post_id": max(ids) if ids else 0, "post_time": time.time(), "reminders": 0}
+        last = {"post_id": max(ids) if ids else 0, "post_time": time.time()}
         save_last(CHANNEL, last)
         print(f"👀 Боевая следилка стартовала, запомнил {len(ids)} постов, бью только по новым.")
     else:
@@ -223,28 +230,27 @@ async def main() -> None:
                     else:
                         print(f"НОВЫЙ ПОСТ {pid} — атака!")
                         await attack(pid, post_text)
-                    last = {"post_id": pid, "post_time": time.time(), "reminders": 0}
+                    last = {"post_id": pid, "post_time": time.time()}
                     save_last(CHANNEL, last)
             else:
-                # тихо: проверяем таймер напоминалки (настраивается через /remind N)
+                # тихо: проверяем таймер напоминалки per-group
                 if last.get("post_id"):
-                    remind_min = get_remind_minutes()
                     elapsed = time.time() - last.get("post_time", time.time())
-                    need = int(elapsed // (remind_min * 60))
-                    sent = int(last.get("reminders", 0))
-                    if need > sent:
-                        if not is_attack_on(CHANNEL):
-                            print(f"Таймер {need * remind_min} мин, но атаки ВЫКЛ — молчу.")
-                            last["reminders"] = need
-                            save_last(CHANNEL, last)
-                        else:
-                            minutes = need * remind_min
-                            print(f"Таймер: {minutes} мин с поста {last['post_id']} — напоминаю.")
-                            await remind(int(last["post_id"]), minutes)
-                            last["reminders"] = need
-                            save_last(CHANNEL, last)
-                    else:
-                        print(f"Тихо ({time.strftime('%H:%M:%S')}), пост {last.get('post_id')}, ждём {remind_min} мин.")
+                    all_groups = load_groups()
+                    for r_cid, r_cfg in all_groups.items():
+                        if r_cid not in ALLOWED_GROUPS:
+                            continue
+                        remind_min = get_remind_minutes(r_cid)
+                        group_reminders = last.get(f"reminders_{r_cid}", 0)
+                        need = int(elapsed // (remind_min * 60))
+                        if need > group_reminders:
+                            if not is_attack_on(CHANNEL):
+                                print(f"Таймер {need * remind_min} мин ({r_cid}), но атаки ВЫКЛ — молчу.")
+                            else:
+                                print(f"Таймер: {need * remind_min} мин ({r_cid}) — напоминаю.")
+                                await remind(int(last["post_id"]), need * remind_min, r_cid)
+                            last[f"reminders_{r_cid}"] = need
+                    save_last(CHANNEL, last)
                 else:
                     print(f"Тихо ({time.strftime('%H:%M:%S')}), постов ещё не было.")
         except Exception as err:
