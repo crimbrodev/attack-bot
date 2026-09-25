@@ -1,17 +1,30 @@
+# Secrets
 .env
+
+# Telegram sessions (auth keys!)
+*.session
+*.session-journal
+
+# Runtime logs
 *.log
-users.json
+
+# Python
 __pycache__/
 *.pyc
-*.session
+
+# Runtime state
+users.json
+groups.json
 last.json
 last_*.json
-groups.json
 muted.json
+comment_stats.json
+call_settings.json
 attack.txt
 callall.txt
 remind.txt
-.pids/
 general.txt
 warnings_on.txt
-comment_stats.json
+BotovodX.txt
+streaminside.txt
+.pids/
