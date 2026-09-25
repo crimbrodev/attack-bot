@@ -17,14 +17,18 @@ get_pid() { cat "$PID_DIR/$1.pid" 2>/dev/null; }
 is_running() { pid=$(get_pid "$1"); [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; }
 
 start_one() {
-    local name="$1"
-    shift
+    local name="$1" log="$2"
+    shift 2
     if is_running "$name"; then
         echo -e "  ${YELLOW}●${NC} $name — уже запущен (PID $(get_pid $name))"
         return
     fi
     cd "$DIR"
-    nohup "$@" > /dev/null 2>&1 &
+    if [ -z "$log" ] || [ "$log" = "-" ]; then
+        nohup "$@" > /dev/null 2>&1 &
+    else
+        nohup "$@" >> "$DIR/$log" 2>&1 &
+    fi
     local pid=$!
     save_pid "$name" "$pid"
     sleep 0.5
@@ -67,11 +71,11 @@ case "$CMD" in
     start)
         echo -e "${CYAN}🔥 Запуск attack bot...${NC}"
         cd "$DIR"
-        start_one "bot" python attack_bot.py
-        start_one "watch-slay" bash -c "HERMES_CHANNEL=slay_awards python attack_watch.py"
-        start_one "watch-stream" bash -c "HERMES_CHANNEL=streaminside python attack_watch.py"
-        start_one "watch-botovod" bash -c "HERMES_CHANNEL=BotovodX python attack_watch.py"
-        start_one "timer" python timer_notify.py
+        start_one "bot" "-" python attack_bot.py
+        start_one "watch-slay" "watcher_slay_awards.out.log" bash -c "HERMES_CHANNEL=slay_awards python -u attack_watch.py"
+        start_one "watch-stream" "watcher_streaminside.out.log" bash -c "HERMES_CHANNEL=streaminside python -u attack_watch.py"
+        start_one "watch-botovod" "watcher_BotovodX.out.log" bash -c "HERMES_CHANNEL=BotovodX python -u attack_watch.py"
+        start_one "timer" "-" python timer_notify.py
         echo ""
         echo -e "${GREEN}✅ Все компоненты запущены${NC}"
         ;;
@@ -85,7 +89,7 @@ case "$CMD" in
         stop_one "timer"
         # Убиваем сирот если остались
         pkill -f "python attack_bot.py" 2>/dev/null
-        pkill -f "python attack_watch.py" 2>/dev/null
+        pkill -f "python -u attack_watch.py" 2>/dev/null
         pkill -f "python timer_notify.py" 2>/dev/null
         sleep 1
         echo ""
