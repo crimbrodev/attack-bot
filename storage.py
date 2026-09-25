@@ -258,17 +258,8 @@ def set_thread(cid: str, thread_id) -> None:
 # --- Напоминалки ---
 
 def get_remind_minutes(cid: str = "") -> int:
-    if cid:
-        return _get_group_cfg(cid).get("remind_minutes", DEFAULT_REMIND_MIN)
-    # Fallback: глобальное для совместимости со старыми вызовами
-    raw = _read_text(REMIND_FILE)
-    if not raw:
-        return DEFAULT_REMIND_MIN
-    try:
-        val = int(raw)
-        return val if val > 0 else DEFAULT_REMIND_MIN
-    except ValueError:
-        return DEFAULT_REMIND_MIN
+    """Интервал напоминалок (мин) для группы. Без cid — дефолт из _GROUP_DEFAULTS."""
+    return _get_group_cfg(cid).get("remind_minutes", DEFAULT_REMIND_MIN)
 
 
 def set_remind_minutes(cid: str, minutes: int) -> None:
@@ -279,9 +270,8 @@ def set_remind_minutes(cid: str, minutes: int) -> None:
 # --- Авто-callall ---
 
 def is_callall_on(cid: str = "") -> bool:
-    if cid:
-        return _get_group_cfg(cid).get("callall", False)
-    return _read_text(CALLALL_FILE).lower() == "on"
+    """Включён ли авто-callall для группы. Без cid — дефолт из _GROUP_DEFAULTS."""
+    return bool(_get_group_cfg(cid).get("callall", False))
 
 
 def set_callall(cid: str, on: bool) -> None:
@@ -292,12 +282,8 @@ def set_callall(cid: str, on: bool) -> None:
 # --- Предупреждения ---
 
 def is_warnings_on(cid: str = "") -> bool:
-    if cid:
-        return _get_group_cfg(cid).get("warnings", True)
-    val = _read_text(WARNINGS_FILE)
-    if val == "":
-        return True
-    return val != "off"
+    """Включены ли предупреждения для группы. Без cid — дефолт из _GROUP_DEFAULTS."""
+    return bool(_get_group_cfg(cid).get("warnings", True))
 
 
 def set_warnings(cid: str, on: bool) -> None:
@@ -308,9 +294,8 @@ def set_warnings(cid: str, on: bool) -> None:
 # --- Чат для предупреждений ---
 
 def get_general_chat(cid: str = "") -> str:
-    if cid:
-        return _get_group_cfg(cid).get("general_chat", "")
-    return _read_text(GENERAL_FILE)
+    """Чат для предупреждений группы. Без cid — дефолт из _GROUP_DEFAULTS."""
+    return _get_group_cfg(cid).get("general_chat", "")
 
 
 def set_general_chat(cid: str, chat_id: str) -> None:
@@ -329,7 +314,3 @@ def get_call_setting(cid: str, key: str):
 def set_call_setting(cid: str, key: str, value) -> None:
     """Установить настройку зазывалы для группы."""
     _set_group_cfg(cid, key, value)
-
-
-WARNINGS_FILE = STATE_DIR / "warnings_on.txt"
-GENERAL_FILE = STATE_DIR / "general.txt"

@@ -23,10 +23,7 @@ ALLOWED_GROUPS = [g.strip() for g in ALLOWED_GROUPS_STR.split(",") if g.strip()]
 # Paths
 GROUPS_FILE = STATE_DIR / "groups.json"
 USERS_FILE = STATE_DIR / "users.json"
-LAST_FILE_PREFIX = STATE_DIR / "last"
 ATTACK_FILE = STATE_DIR / "attack.txt"
-CALLALL_FILE = STATE_DIR / "callall.txt"
-REMIND_FILE = STATE_DIR / "remind.txt"
 MUTED_FILE = STATE_DIR / "muted.json"
 
 # Defaults
